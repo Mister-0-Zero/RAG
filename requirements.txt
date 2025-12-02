@@ -1,0 +1,10 @@
+torch
+sentence-transformers
+chromadb
+python-docx
+pymupdf
+pdfplumber
+fastapi
+uvicorn
+typer
+pydantic
