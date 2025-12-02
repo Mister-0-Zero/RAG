@@ -1,0 +1,8 @@
+[project]
+name = "rag_project"
+version = "0.1.0"
+description = "Local RAG stack for Human Design knowledge base"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["."]
