@@ -65,5 +65,12 @@ class VectorStore:
         return hits
 
     def clear(self, condition: dict | None = None) -> None:
-        where = condition or {}
-        self._collection.delete(where=where)
+            if condition:
+                self._collection.delete(where=condition)
+                return
+            
+            self._client.delete_collection(self._collection_name)
+            self._collection = self._client.get_or_create_collection(
+                name=self._collection_name,
+                metadata={"hnsw:space": "cosine"},
+            )
