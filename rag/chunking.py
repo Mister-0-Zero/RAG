@@ -11,6 +11,8 @@ class Chunk(BaseModel):
     order: int
     start_char: int
     end_char: int
+    language: str | None = None
+    category: str | None = None
 
 
 def chunk_document(
@@ -42,6 +44,8 @@ def chunk_document(
             order=n,
             start_char=start,
             end_char=end,
+            language=doc.language,
+            category=doc.category,
         )
         chunks.append(chunk)
 

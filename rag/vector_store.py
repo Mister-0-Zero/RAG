@@ -32,7 +32,7 @@ class VectorStore:
 
         ids = [chunk.id for chunk in chunks]
         documents = [chunk.text for chunk in chunks]
-        metadatas = [{"doc_id": c.doc_id, "order": c.order} for c in chunks]
+        metadatas = [{"doc_id": c.doc_id, "order": c.order, "language": c.language, "category": c.category} for c in chunks]
 
         self._collection.add(
             ids=ids,
@@ -68,7 +68,7 @@ class VectorStore:
             if condition:
                 self._collection.delete(where=condition)
                 return
-            
+
             self._client.delete_collection(self._collection_name)
             self._collection = self._client.get_or_create_collection(
                 name=self._collection_name,
