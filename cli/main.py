@@ -9,7 +9,7 @@ from rag.pipeline import build_dense_retriever
 def main() -> None:
     cfg = RAGConfig()
     print("Строим dense-ретривер (ingest → chunk → index)...")
-    retriever, chunks = build_dense_retriever(cfg=cfg)
+    retriever, chunks = build_dense_retriever(cfg=cfg, chunk_size=400, overlap=100)
 
     print(f"Готово. Документов: {len(set(c.doc_id for c in chunks))}, чанков: {len(chunks)}")
     print("Введите вопрос (или exit):")
