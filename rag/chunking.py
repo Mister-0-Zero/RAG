@@ -29,6 +29,7 @@ class Chunk(BaseModel):
     order: int
     start_char: int
     end_char: int
+    doc_name: str
     language: str | None = None
     category: str | None = None
 
@@ -40,6 +41,7 @@ def chunk_document(
 ) -> list[Chunk]:
     print(f"Начало чанкинга документа: {doc.id}, категория: {doc.category}")
     text = doc.text or ""
+    doc_name = doc.source or "unknown"
     length = len(text)
 
     if length == 0:
@@ -61,6 +63,7 @@ def chunk_document(
         chunk = Chunk(
             id=f"{doc.id}::chunk_{n}",
             doc_id=doc.id,
+            doc_name=doc_name,
             text=chunk_text,
             order=n,
             start_char=start,
