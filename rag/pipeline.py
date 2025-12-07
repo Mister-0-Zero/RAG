@@ -14,15 +14,19 @@ def build_dense_retriever(
 ) -> tuple[DenseRetriever, list[Chunk]]:
     cfg = cfg or RAGConfig()
 
+
     documents = ingest_all(cfg=cfg)
+    print()
 
     chunks = chunk_documents(
         documents,
         chunk_size=chunk_size,
         overlap=overlap,
     )
+    print()
 
     retriever = DenseRetriever(cfg=cfg)
     retriever.build_index(chunks)
+    print()
 
     return retriever, chunks

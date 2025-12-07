@@ -41,10 +41,40 @@ class VectorStore:
             metadatas=metadatas,
         )
 
-    def query(self, query_embedding: list[float], n_results: int = 5) -> list[dict[str, Any]]:
+    def query(self, query_embedding: list[float], n_results: int = 5, where: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        kwargs: dict[str, Any] = {
+            "query_embeddings": [query_embedding],
+            "n_results": n_results,
+        }
+        filters = []
+
+        lang = where.get("language")
+        if lang:
+            if lang == "mixed":
+                # хотим: ru, en и mixed
+                filters.append({"language": {"$in": ["ru", "en", "mixed"]}})
+            else:
+                # хотим: либо конкретный язык, либо mixed
+                filters.append({
+                    "$or": [
+                        {"language": lang},
+                        {"language": "mixed"},
+                    ]
+                })
+
+        category = where.get("category")
+        if category:
+            filters.append({"category": category})
+
+        if filters:
+            if len(filters) == 1:
+                kwargs["where"] = filters[0]
+            else:
+                kwargs["where"] = {"$and": filters}
+
+
         result = self._collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_results,
+            **kwargs
         )
 
         ids = result.get("ids", [[]])[0]

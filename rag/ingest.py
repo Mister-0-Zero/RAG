@@ -16,7 +16,6 @@ class RawDocument(BaseModel):
     text: str
     source: str
     doc_type: str
-    language: str | None = None
     category: str | None = None
 
 
@@ -44,18 +43,6 @@ def detect_category(path: Path) -> str | None:
         return "center"
     return "general"
 
-def detect_language(text: str) -> str | None:
-    # Простейшая эвристика для определения языка
-    cyrillic_chars = sum(1 for char in text if 'а' <= char <= 'я' or 'А' <= char <= 'Я')
-    latin_chars = sum(1 for char in text if 'a' <= char <= 'z' or 'A' <= char <= 'Z')
-
-    if cyrillic_chars > latin_chars:
-        return "ru"
-    elif latin_chars > cyrillic_chars:
-        return "en"
-    else:
-        return None
-
 def read_txt(path: Path) -> str:
     with path.open(encoding="utf-8", errors="ignore") as f:
         return f.read()
@@ -77,6 +64,7 @@ def read_pdf(path: Path) -> str:
 
 def ingest_directory(path_dir: Path) -> list[RawDocument]:
     """Читает txt/docx/pdf из директории и возвращает список RawDocument."""
+    print("Начало инжеста документов...")
     documents: list[RawDocument] = []
 
     for file in path_dir.rglob("*"):
@@ -103,8 +91,8 @@ def ingest_directory(path_dir: Path) -> list[RawDocument]:
             continue
 
         text = normalize_text(raw_text)
-        language = detect_language(text)
         category = detect_category(file)
+        print(f"Инжестим документ: {file.name}, категория: {category}, тип: {doc_type}")
 
         documents.append(
             RawDocument(
@@ -113,7 +101,6 @@ def ingest_directory(path_dir: Path) -> list[RawDocument]:
                 text=text,
                 source=file.name,
                 doc_type=doc_type,
-                language=language,
                 category=category,
             )
         )

@@ -4,6 +4,24 @@ from pydantic import BaseModel
 from rag.ingest import RawDocument
 
 
+def detect_language(text: str) -> str | None:
+    cyrillic_chars = sum(1 for char in text if 'а' <= char <= 'я' or 'А' <= char <= 'Я')
+    latin_chars = sum(1 for char in text if 'a' <= char <= 'z' or 'A' <= char <= 'Z')
+
+    if cyrillic_chars == 0 and latin_chars == 0:
+        return "mixed"
+
+    relationship = min(cyrillic_chars, latin_chars) / max(cyrillic_chars, latin_chars)
+
+    if relationship > 0.6:
+        return "mixed"
+    elif cyrillic_chars > latin_chars:
+        return "ru"
+    elif latin_chars > cyrillic_chars:
+        return "en"
+    else:
+        return "mixed"
+
 class Chunk(BaseModel):
     id: str
     doc_id: str
@@ -20,6 +38,7 @@ def chunk_document(
     chunk_size: int = 800,
     overlap: int = 200,
 ) -> list[Chunk]:
+    print(f"Начало чанкинга документа: {doc.id}, категория: {doc.category}")
     text = doc.text or ""
     length = len(text)
 
@@ -37,14 +56,16 @@ def chunk_document(
     while start < length:
         end = min(start + chunk_size, length)
 
+        chunk_text = text[start:end]
+        language = detect_language(chunk_text)
         chunk = Chunk(
             id=f"{doc.id}::chunk_{n}",
             doc_id=doc.id,
-            text=text[start:end],
+            text=chunk_text,
             order=n,
             start_char=start,
             end_char=end,
-            language=doc.language,
+            language=language,
             category=doc.category,
         )
         chunks.append(chunk)
