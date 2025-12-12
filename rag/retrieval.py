@@ -26,6 +26,17 @@ class DenseRetriever:
         self._chunks_by_id: dict[str, Chunk] = {}
         self._chunks_by_doc: dict[str, list[Chunk]] = {}
 
+    def get_neighbors(self, chunk: Chunk, neighbors: int = 0) -> list[Chunk]:
+        if neighbors <= 0:
+            return [chunk]
+        doc_chunks = self._chunks_by_doc.get(chunk.doc_id, [])
+        if not doc_chunks:
+            return [chunk]
+        idx = chunk.order
+        start = idx - 1 if idx - 1 >= 0 else 0
+        end = min(len(doc_chunks), idx + neighbors + 1)
+        return doc_chunks[start:end]
+
     def build_index(self, chunks: list[Chunk], clear: bool = True) -> None:
         print("Построение индекса векторного хранилища...")
         if clear:
