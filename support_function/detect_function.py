@@ -6,7 +6,7 @@ def detect_category(text: str) -> str | None:
         return "channel"
     if "center" in text or "центр" in text:
         return "center"
-    return "general"
+    return None
 
 def detect_language(text: str) -> str | None:
     cyrillic_chars = sum(1 for char in text if 'а' <= char <= 'я' or 'А' <= char <= 'Я')

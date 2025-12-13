@@ -5,14 +5,14 @@ import logging
 
 from rag.config import RAGConfig
 from rag.logger import setup_logging
-from rag.pipeline import build_dense_retriever
+from rag.pipeline import build_hybrid_retriever
 from support_function.detect_function import *
 
 def main() -> None:
     setup_logging()
     cfg = RAGConfig()
     logging.info("Строим dense-ретривер (ingest → chunk → index)...", extra={'log_type': 'INFO'})
-    retriever, chunks = build_dense_retriever(cfg=cfg, chunk_size=600, overlap=150)
+    retriever, chunks = build_hybrid_retriever(cfg=cfg, chunk_size=600, overlap=150)
 
     logging.info(f"Готово. Документов: {len(set(c.doc_id for c in chunks))}, чанков: {len(chunks)}", extra={'log_type': 'INFO'})
     logging.info("Введите вопрос (или exit):", extra={'log_type': 'INFO'})
@@ -40,13 +40,17 @@ def main() -> None:
             continue
 
         for i, r in enumerate(results, start=1):
-            distance = r["distance"]
+            score = r["score"]
+            dense_score = r["dense_score"]
+            lexical_score = r["lexical_score"]
+            lexical_norm = r["lexical_norm"]
+
             doc_name = r['main_chunk'].doc_name
             context_chunks = r['chunk']
             main_chunk = r["main_chunk"]
             full_text = "\n\n".join([c.text for c in context_chunks])
 
-            logging.info(f"=== Результат {i} (distance={distance:.4f}) ===", extra={'log_type': 'MODEL_RESPONSE'})
+            logging.info(f"=== Результат {i} (score={score:.4f}, dense={dense_score:.4f}, lexical={lexical_score:.4f}, lexical_norm={lexical_norm:.4f}) ===", extra={'log_type': 'MODEL_RESPONSE'})
             logging.info(f"Источник: {doc_name}, doc_id: {main_chunk.doc_id}, Категория: {main_chunk.category}, Язык: {main_chunk.language}", extra={'log_type': 'METADATA'})
             logging.info(f"Фрагмент: {full_text}", extra={'log_type': 'MODEL_RESPONSE'})
             logging.info("-" * 10, extra={'log_type': 'MODEL_RESPONSE'})
