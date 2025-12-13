@@ -40,10 +40,10 @@ def main() -> None:
             continue
 
         for i, r in enumerate(results, start=1):
-            score = r["score"]
-            dense_score = r["dense_score"]
-            lexical_score = r["lexical_score"]
-            lexical_norm = r["lexical_norm"]
+            score = r.get("score", 0.0)
+            dense_score = r.get("score", 0.0)
+            lexical_score = r.get("lexical_score", 0.0)
+            lexical_norm = r.get("lexical_norm", 0.0)
 
             doc_name = r['main_chunk'].doc_name
             context_chunks = r['chunk']
