@@ -2,14 +2,30 @@ from __future__ import annotations
 
 import sys
 import logging
+import os
+from pathlib import Path
 
 from rag.config import RAGConfig
 from rag.logger import setup_logging
 from rag.pipeline import build_hybrid_retriever
+from search.es_client  import get_es, check_es_or_die
 from support_function.detect_function import *
 
 def main() -> None:
     setup_logging()
+
+    logging.getLogger("elastic_transport").setLevel(logging.WARNING)
+    logging.getLogger("elasticsearch").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+    compose_dir = Path(__file__).resolve().parents[1]
+
+    for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        os.environ.pop(k, None)
+
+    es = get_es()
+    check_es_or_die(es)
+
     cfg = RAGConfig()
     logging.info("Строим dense-ретривер (ingest → chunk → index)...", extra={'log_type': 'INFO'})
     retriever, chunks = build_hybrid_retriever(cfg=cfg, chunk_size=600, overlap=150)

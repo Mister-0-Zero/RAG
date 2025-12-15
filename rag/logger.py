@@ -14,7 +14,7 @@ class ColoredFormatter(logging.Formatter):
         'USER_QUERY': Fore.GREEN,
         'INFO': Fore.BLUE,
         'MODEL_RESPONSE': Fore.CYAN,
-        'METADATA': Fore.MAGENTA, # Using Magenta for Purple
+        'METADATA': Fore.MAGENTA,
         'DEFAULT': Fore.WHITE,
     }
 
@@ -26,7 +26,6 @@ class ColoredFormatter(logging.Formatter):
         log_type = getattr(record, 'log_type', record.levelname)
         color = self.LOG_COLORS.get(log_type, self.LOG_COLORS['DEFAULT'])
 
-        # For standard levels, we can prepend the level name
         if log_type in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']:
             log_fmt = f"{Style.BRIGHT}[{record.levelname}]{Style.NORMAL} {self._fmt}"
         else:
@@ -44,17 +43,14 @@ def setup_logging():
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
 
-    # Clear existing handlers
     if root_logger.hasHandlers():
         root_logger.handlers.clear()
 
-    # Console Handler with Colors
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(ColoredFormatter())
     root_logger.addHandler(console_handler)
 
-    # File Handler
     file_handler = logging.FileHandler("app.log", mode='a', encoding='utf-8')
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')

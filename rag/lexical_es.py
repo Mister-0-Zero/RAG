@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, List
-from unicodedata import category
 
-from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
 from search.es_client import get_es
@@ -12,7 +10,7 @@ from rag.chunking import Chunk
 
 class ElasticsearchLexicalRetriever:
     def __init__(self, index_name: str = "hd_chunks") -> None:
-        self._es: Elasticsearch = get_es()
+        self._es = get_es()
         self._index_name = index_name
         self._ensure_index()
 
@@ -23,7 +21,8 @@ class ElasticsearchLexicalRetriever:
                     "properties": {
                         "id":        {"type": "keyword"},
                         "doc_id":    {"type": "keyword"},
-                        "text":      {"type": "text"},      # стандартный анализатор
+                        "doc_name":  {"type": "keyword"},
+                        "text":      {"type": "text"},
                         "order":     {"type": "integer"},
                         "language":  {"type": "keyword"},
                         "category":  {"type": "keyword"},
@@ -47,6 +46,7 @@ class ElasticsearchLexicalRetriever:
                 "_source": {
                     "id": c.id,
                     "doc_id": c.doc_id,
+                    "doc_name": c.doc_name,
                     "text": c.text,
                     "order": c.order,
                     "language": c.language or "mixed",
@@ -56,7 +56,7 @@ class ElasticsearchLexicalRetriever:
                 },
             })
 
-            bulk(self._es, actions)
+        bulk(self._es, actions)
 
     def search(self, query: str, top_k: int = 10, language: str | None = None, category: str | None = None) -> List[Any]:
         filters: list[dict[str, Any]] = []
@@ -88,19 +88,28 @@ class ElasticsearchLexicalRetriever:
         resp = self._es.search(index=self._index_name, body=body)
 
         hits = resp["hits"]["hits"]
-        result_chunks: list[Chunk] = []
+
+        results: list[dict[str, Any]] = []
         for h in hits:
             src = h["_source"]
-            result_chunks.append(
-                Chunk(
-                    id=src["id"],
-                    doc_id=src["doc_id"],
-                    text=src["text"],
-                    order=src["order"],
-                    start_char=src.get("start_char", 0),
-                    end_char=src.get("end_char", 0),
-                    language=src.get("language"),
-                    category=src.get("category"),
-                )
+
+            chunk = Chunk(
+                id=src["id"],
+                doc_id=src["doc_id"],
+                doc_name=src["doc_name"],
+                text=src["text"],
+                order=src["order"],
+                start_char=src.get("start_char", 0),
+                end_char=src.get("end_char", 0),
+                language=src.get("language"),
+                category=src.get("category"),
             )
-        return result_chunks
+
+            results.append(
+                {
+                    "chunk": chunk,
+                    "score": float(h["_score"]),
+                }
+            )
+
+        return results
