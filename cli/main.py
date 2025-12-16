@@ -10,27 +10,34 @@ from rag.logger import setup_logging
 from rag.pipeline import build_hybrid_retriever
 from search.es_client  import get_es, check_es_or_die
 from support_function.detect_function import *
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="RAG CLI")
+    parser.add_argument('--reindex', action='store_true', help='Reindex the documents before starting the CLI')
+    return parser.parse_args()
 
 def main() -> None:
+    args = parse_args()
+    reindex = args.reindex
+
     setup_logging()
 
     logging.getLogger("elastic_transport").setLevel(logging.WARNING)
     logging.getLogger("elasticsearch").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-    compose_dir = Path(__file__).resolve().parents[1]
-
-    for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
-        os.environ.pop(k, None)
+    # for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+    #     os.environ.pop(k, None)
 
     es = get_es()
     check_es_or_die(es)
 
     cfg = RAGConfig()
-    logging.info("Строим dense-ретривер (ingest → chunk → index)...", extra={'log_type': 'INFO'})
-    retriever, chunks = build_hybrid_retriever(cfg=cfg, chunk_size=600, overlap=150)
+    logging.info("Строим hybrid-ретривер", extra={'log_type': 'INFO'})
+    retriever = build_hybrid_retriever(cfg=cfg, chunk_size=600, overlap=150, reindex=reindex)
+    logging.info("Готово.", extra={'log_type': 'INFO'})
 
-    logging.info(f"Готово. Документов: {len(set(c.doc_id for c in chunks))}, чанков: {len(chunks)}", extra={'log_type': 'INFO'})
     logging.info("Введите вопрос (или exit):", extra={'log_type': 'INFO'})
 
     while True:

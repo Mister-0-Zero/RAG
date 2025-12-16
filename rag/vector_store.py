@@ -94,7 +94,7 @@ class VectorStore:
             )
         return hits
 
-    def clear(self, condition: dict | None = None) -> None:
+    def clear_index(self, condition: dict | None = None) -> None:
             if condition:
                 self._collection.delete(where=condition)
                 return

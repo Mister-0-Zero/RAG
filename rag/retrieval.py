@@ -39,8 +39,6 @@ class DenseRetriever:
 
     def build_index(self, chunks: list[Chunk], clear: bool = True) -> None:
         print("Построение индекса векторного хранилища...")
-        if clear:
-            self._store.clear()
 
         texts = [c.text for c in chunks]
         embeddings = self._embedder.embed_texts(texts)

@@ -58,6 +58,11 @@ class ElasticsearchLexicalRetriever:
 
         bulk(self._es, actions)
 
+    def clear_index(self) -> None:
+        if self._es.indices.exists(index=self._index_name):
+            self._es.indices.delete(index=self._index_name)
+        self._ensure_index()
+
     def search(self, query: str, top_k: int = 10, language: str | None = None, category: str | None = None) -> List[Any]:
         filters: list[dict[str, Any]] = []
 
