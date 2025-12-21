@@ -1,5 +1,9 @@
+"""
+Provides functions for ingesting and processing documents from a directory.
+"""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from docx import Document
@@ -8,53 +12,25 @@ from pydantic import BaseModel
 
 from rag.config import RAGConfig
 
+from support_function.detect_function import detect_category
 
-class RawDocument(BaseModel):
-    """Метаданные и содержимое необработанного документа."""
-    id: str
-    path: Path
-    text: str
-    source: str
-    doc_type: str
-    category: str | None = None
-
-
-def normalize_text(text: str) -> str:
-    """Простая нормализация текста."""
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-
-    lines = [line.rstrip() for line in text.split("\n")]
-
-    normalized_lines: list[str] = []
-
-    for line in lines:
-        if line != "":
-            normalized_lines.append(line)
-
-    return "\n".join(normalized_lines).strip()
-
-def detect_category(path: Path) -> str | None:
-    name = path.name.lower()
-    if "gate" in name or "ворота" in name:
-        return "gate"
-    if "channel" in name or "канал" in name:
-        return "channel"
-    if "center" in name or "центр" in name:
-        return "center"
-    return "general"
+log = logging.getLogger(__name__)
 
 def read_txt(path: Path) -> str:
+    """Reads text content from a .txt file."""
     with path.open(encoding="utf-8", errors="ignore") as f:
         return f.read()
 
 
 def read_docx(path: Path) -> str:
+    """Reads text content from a .docx file."""
     doc = Document(path)
     texts = [p.text for p in doc.paragraphs]
     return "\n".join(texts)
 
 
 def read_pdf(path: Path) -> str:
+    """Reads text content from a .pdf file."""
     texts: list[str] = []
     with fitz.open(path) as doc:
         for page in doc:
@@ -63,9 +39,11 @@ def read_pdf(path: Path) -> str:
 
 
 def ingest_directory(path_dir: Path) -> list[RawDocument]:
-    """Читает txt/docx/pdf из директории и возвращает список RawDocument."""
-    print("Начало инжеста документов...")
+    """Ingests all supported documents from a directory into a list of `RawDocument` objects."""
+    log.info(f"Starting ingestion from directory: {path_dir}...", extra={'log_type': 'INFO'})
     documents: list[RawDocument] = []
+    supported_files = 0
+    unsupported_files = 0
 
     for file in path_dir.rglob("*"):
         if not file.is_file():
@@ -83,16 +61,12 @@ def ingest_directory(path_dir: Path) -> list[RawDocument]:
             raw_text = read_pdf(file)
             doc_type = "pdf"
         else:
-            # временно просто предупреждаем и пропускаем
-            print(
-                f"Тип файла {suffix} не поддерживается. "
-                "Поддерживаемые типы: txt, docx, pdf."
-            )
+            unsupported_files += 1
             continue
 
         text = normalize_text(raw_text)
         category = detect_category(file)
-        print(f"Инжестим документ: {file.name}, категория: {category}, тип: {doc_type}")
+        supported_files += 1
 
         documents.append(
             RawDocument(
@@ -104,10 +78,16 @@ def ingest_directory(path_dir: Path) -> list[RawDocument]:
                 category=category,
             )
         )
-
+    
+    log.info(
+        f"Finished ingestion. Ingested {supported_files} supported files. "
+        f"Skipped {unsupported_files} unsupported files.",
+        extra={'log_type': 'INFO'}
+    )
     return documents
 
 
 def ingest_all(cfg: RAGConfig | None = None) -> list[RawDocument]:
+    """A wrapper function to start the ingestion process using a `RAGConfig`."""
     cfg = cfg or RAGConfig()
     return ingest_directory(cfg.data_raw)

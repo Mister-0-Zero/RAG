@@ -1,3 +1,6 @@
+"""
+This module provides a context compression mechanism using a language model.
+"""
 from __future__ import annotations
 
 import logging
@@ -8,14 +11,22 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from rag.chunking import Chunk
 from rag.config import RAGConfig
 
+log = logging.getLogger(__name__)
+
 
 class ContextCompressor:
+    """
+    Manages the compression of text chunks into a more concise context using a pre-trained language model.
+    """
     def __init__(
         self,
         cfg: RAGConfig,
         neighbors: int = 5,
     ) -> None:
-        logging.info("Loading compressor model: %s", cfg.model_name_for_compressor)
+        """
+        Initializes the ContextCompressor, loading the specified language model and tokenizer.
+        """
+        log.info("Loading compressor model: %s", cfg.model_name_for_compressor)
         self.device = cfg.device
         self.max_new_tokens = cfg.max_tokens_after_compressed_per_result_ * neighbors
         self.temperature = cfg.temperature_model_compressor
@@ -29,7 +40,11 @@ class ContextCompressor:
         ).eval()
 
     def compress(self, question: str, chunks: List[Chunk]) -> str:
+        """
+        Compresses a list of text chunks relevant to a given question using the loaded language model.
+        """
         prompt = self._build_prompt(question, chunks)
+        log.info(f"Context before compression:\n{prompt}", extra={"log_type": "CONTEXT_BEFORE"})
 
         inputs = self.tokenizer(
             prompt,
@@ -51,10 +66,14 @@ class ContextCompressor:
             output[0][inputs["input_ids"].shape[-1]:],
             skip_special_tokens=True,
         )
-
+        
+        log.info(f"Context after compression:\n{text.strip()}", extra={"log_type": "CONTEXT_AFTER"})
         return text.strip()
 
     def _build_prompt(self, question: str, chunks: List[Chunk]) -> str:
+        """
+        Constructs the prompt string for the language model based on the question and provided chunks.
+        """
         fragments = []
         for i, ch in enumerate(chunks, 1):
             fragments.append(f"[Фрагмент {i}]\n{ch.text}")

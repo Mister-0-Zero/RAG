@@ -1,15 +1,25 @@
+"""
+Provides a reranker for search results using a CrossEncoder model.
+"""
+import logging
 from typing import Any, List
 from sentence_transformers import CrossEncoder
-from rag.chunking import Chunk
 from rag.config import RAGConfig
 
+log = logging.getLogger(__name__)
+
 class Reranker:
+    """Uses a CrossEncoder model to rerank a list of candidate documents."""
     def __init__(
         self,
-        model_name: str = RAGConfig().rerank_model,
+        model_name: str | None = None,
         batch_size: int = 16,
     ) -> None:
-        self.model = CrossEncoder(model_name, device=RAGConfig().device)
+        """Initializes the Reranker, loading the specified CrossEncoder model."""
+        cfg = RAGConfig()
+        self.model_name = model_name or cfg.rerank_model
+        log.info(f"Loading reranker model: {self.model_name}", extra={'log_type': 'INFO'})
+        self.model = CrossEncoder(self.model_name, device=cfg.device)
         self.batch_size = batch_size
 
     def rerank(
@@ -18,9 +28,11 @@ class Reranker:
         candidates: List[dict[str, Any]],
         top_k: int = 3,
     ) -> List[dict[str, Any]]:
-
+        """Reranks a list of candidate documents against a query and returns the top_k results."""
         if not candidates:
             return []
+        
+        log.info(f"Reranking {len(candidates)} candidates...", extra={'log_type': 'INFO'})
 
         pairs = [
             (query, c["main_chunk"].text)

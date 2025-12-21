@@ -1,28 +1,18 @@
+"""
+Provides functions for splitting documents into smaller chunks.
+"""
 from __future__ import annotations
 
+import logging
 from pydantic import BaseModel
 from rag.ingest import RawDocument
 
+from support_function.detect_function import detect_language
 
-def detect_language(text: str) -> str | None:
-    cyrillic_chars = sum(1 for char in text if 'а' <= char <= 'я' or 'А' <= char <= 'Я')
-    latin_chars = sum(1 for char in text if 'a' <= char <= 'z' or 'A' <= char <= 'Z')
-
-    if cyrillic_chars == 0 and latin_chars == 0:
-        return "mixed"
-
-    relationship = min(cyrillic_chars, latin_chars) / max(cyrillic_chars, latin_chars)
-
-    if relationship > 0.6:
-        return "mixed"
-    elif cyrillic_chars > latin_chars:
-        return "ru"
-    elif latin_chars > cyrillic_chars:
-        return "en"
-    else:
-        return "mixed"
+log = logging.getLogger(__name__)
 
 class Chunk(BaseModel):
+    """A Pydantic model for a text chunk from a document."""
     id: str
     doc_id: str
     text: str
@@ -39,7 +29,7 @@ def chunk_document(
     chunk_size: int = 800,
     overlap: int = 200,
 ) -> list[Chunk]:
-    print(f"Начало чанкинга документа: {doc.id}, категория: {doc.category}")
+    """Splits a single document into a list of `Chunk` objects."""
     text = doc.text or ""
     doc_name = doc.source or "unknown"
     length = len(text)
@@ -74,7 +64,7 @@ def chunk_document(
         chunks.append(chunk)
 
         if end == length:
-            break  # дошли до конца текста
+            break
 
         start = end - overlap
         n += 1
@@ -87,7 +77,10 @@ def chunk_documents(
     chunk_size: int = 800,
     overlap: int = 200,
 ) -> list[Chunk]:
+    """Splits a list of documents into a single list of `Chunk` objects."""
+    log.info(f"Starting chunking for {len(docs)} documents...", extra={'log_type': 'INFO'})
     all_chunks: list[Chunk] = []
     for doc in docs:
         all_chunks.extend(chunk_document(doc=doc, chunk_size=chunk_size, overlap=overlap))
+    log.info(f"Finished chunking. Created {len(all_chunks)} chunks.", extra={'log_type': 'INFO'})
     return all_chunks

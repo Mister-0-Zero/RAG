@@ -1,4 +1,9 @@
+"""
+Provides helper functions for detecting language and category from text.
+"""
+
 def detect_category(text: str) -> str | None:
+    """Detects a category from text by searching for keywords."""
     text = text.lower()
     if "gate" in text or "ворота" in text:
         return "gate"
@@ -9,6 +14,7 @@ def detect_category(text: str) -> str | None:
     return None
 
 def detect_language(text: str) -> str | None:
+    """Detects if text is primarily Russian, English, or mixed."""
     cyrillic_chars = sum(1 for char in text if 'а' <= char <= 'я' or 'А' <= char <= 'Я')
     latin_chars = sum(1 for char in text if 'a' <= char <= 'z' or 'A' <= char <= 'Z')
 

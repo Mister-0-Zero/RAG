@@ -1,3 +1,8 @@
+"""
+This module provides a command-line interface for interacting with the RAG pipeline.
+It handles argument parsing, sets up logging, initializes the RAG components,
+and processes user queries.
+"""
 from __future__ import annotations
 
 import sys
@@ -14,31 +19,36 @@ from search.es_client  import get_es, check_es_or_die
 from support_function.detect_function import *
 import argparse
 
+log = logging.getLogger(__name__)
+
 def parse_args():
+    """
+    Parses command-line arguments for the RAG CLI.
+    """
     parser = argparse.ArgumentParser(description="RAG CLI")
     parser.add_argument('--reindex', action='store_true', help='Reindex the documents before starting the CLI')
     return parser.parse_args()
 
 def main() -> None:
+    """
+    Main function for the RAG CLI. It sets up the pipeline, processes user input,
+    and returns relevant information based on the RAG model.
+    """
     args = parse_args()
     reindex = args.reindex
 
     setup_logging()
-
-    logging.getLogger("elastic_transport").setLevel(logging.WARNING)
-    logging.getLogger("elasticsearch").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     es = get_es()
     check_es_or_die(es)
     neighbors = 3
 
     cfg = RAGConfig()
-    logging.info("Строим hybrid-ретривер", extra={'log_type': 'INFO'})
+    log.info("Строим hybrid-ретривер", extra={'log_type': 'INFO'})
     retriever = build_hybrid_retriever(cfg=cfg, chunk_size=600, overlap=150, reindex=reindex)
-    logging.info("Готово.", extra={'log_type': 'INFO'})
+    log.info("Готово.", extra={'log_type': 'INFO'})
 
-    logging.info("Введите вопрос (или exit):", extra={'log_type': 'INFO'})
+    log.info("Введите вопрос (или exit):", extra={'log_type': 'INFO'})
 
     compressor = ContextCompressor(cfg)
 
@@ -47,16 +57,16 @@ def main() -> None:
         if not query:
             continue
 
-        logging.info(f"Вопрос: {query}", extra={'log_type': 'USER_QUERY'})
+        log.info(f"Вопрос: {query}", extra={'log_type': 'USER_QUERY'})
 
         if query.lower() in {"exit", "quit"}:
-            logging.info("До встречи.", extra={'log_type': 'INFO'})
+            log.info("До встречи.", extra={'log_type': 'INFO'})
             sys.exit(0)
 
         language = detect_language(query)
         category = detect_category(query)
 
-        logging.info(f"Язык: {language}, Категория: {category}", extra={'log_type': 'METADATA'})
+        log.info(f"Язык: {language}, Категория: {category}", extra={'log_type': 'METADATA'})
 
         results = retriever.retrieve(query, language=language, category=category)
 
@@ -65,7 +75,7 @@ def main() -> None:
         final = []
 
         if not results:
-            logging.error("Ничего не нашлось.\n")
+            log.error("Ничего не нашлось.\n")
             continue
 
         for r in results:
@@ -78,17 +88,18 @@ def main() -> None:
             rerank_score = r.get("rerank_score", 0.0)
             doc_name = r['main_chunk'].doc_name
             main_chunk = r["main_chunk"]
-            logging.info(f"=== Результат {i} (score={score:.4f}, rerank={rerank_score:.4f}, dense={dense_score:.4f}, lexical={lexical_score:.4f}, lexical_norm={lexical_norm:.4f}) ===", extra={'log_type': 'MODEL_RESPONSE'})
-            logging.info(f"Источник: {doc_name}, doc_id: {main_chunk.doc_id}, Категория: {main_chunk.category}, Язык: {main_chunk.language}", extra={'log_type': 'METADATA'})
-            logging.debug(f"Контекст до сжатия: {context}")
-            logging.info("-" * 10, extra={'log_type': 'MODEL_RESPONSE'})
+            log.info(f"=== Результат {i} (score={score:.4f}, rerank={rerank_score:.4f}, dense={dense_score:.4f}, lexical={lexical_score:.4f}, lexical_norm={lexical_norm:.4f}) ===", extra={'log_type': 'MODEL_RESPONSE'})
+            log.info(f"Источник: {doc_name}, doc_id: {main_chunk.doc_id}, Категория: {main_chunk.category}, Язык: {main_chunk.language}", extra={'log_type': 'METADATA'})
+            log.debug(f"Контекст до сжатия: {context}")
+            log.info("-" * 10, extra={'log_type': 'MODEL_RESPONSE'})
 
-            compressed_context = compressor.compress(question=query, chunks=context, neighbors=neighbors + 2)
-            final.append({**r, "context": context})
+            compressed_context = compressor.compress(question=query, chunks=context)
+            final.append({**r, "compressed_context": compressed_context})
 
 
-        logging.info("=== Сжатый контекст ===", extra={'log_type': 'MODEL_RESPONSE'})
-        logging.info(*[text + "\n\n" for r, text in enumerate(compressed_context)], extra={'log_type': 'MODEL_RESPONSE'})
+        log.info("=== Сжатый контекст ===", extra={'log_type': 'MODEL_RESPONSE'})
+        for item in final:
+            log.info(item["compressed_context"] + "\n\n", extra={'log_type': 'MODEL_RESPONSE'})
 
 
 

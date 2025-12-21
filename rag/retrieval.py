@@ -1,5 +1,9 @@
+"""
+Provides a dense retriever for vector-based document search.
+"""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from rag.config import RAGConfig
@@ -7,14 +11,18 @@ from rag.chunking import Chunk
 from rag.embeddings import EmbeddingModel
 from rag.vector_store import VectorStore
 
+log = logging.getLogger(__name__)
+
 
 class DenseRetriever:
+    """Manages the retrieval of documents based on dense vector similarity."""
     def __init__(
         self,
         cfg: RAGConfig | None = None,
         embedder: EmbeddingModel | None = None,
         store: VectorStore | None = None,
     ) -> None:
+        """Initializes the DenseRetriever with a configuration, an embedding model, and a vector store."""
         cfg = cfg or RAGConfig()
         embedder = embedder or EmbeddingModel(cfg=cfg)
         store = store or VectorStore(cfg=cfg)
@@ -27,7 +35,8 @@ class DenseRetriever:
         self._chunks_by_doc: dict[str, list[Chunk]] = {}
 
     def build_index(self, chunks: list[Chunk], clear: bool = True) -> None:
-        print("Построение индекса векторного хранилища...")
+        """Builds the vector index from a list of chunks."""
+        log.info(f"Building vector store index with {len(chunks)} chunks...", extra={'log_type': 'INFO'})
 
         texts = [c.text for c in chunks]
         embeddings = self._embedder.embed_texts(texts)
@@ -42,15 +51,18 @@ class DenseRetriever:
 
         for doc_id, doc_chunks in self._chunks_by_doc.items():
             doc_chunks.sort(key=lambda x: x.order)
-
+        
+        log.info("Finished building vector store index.", extra={'log_type': 'INFO'})
 
     def retrieve(self, query: str, top_k: int = 5, language: str | None = None, category: str | None = None, neighbors: int = 0) -> list[dict[str, Any]]:
+        """Retrieves relevant documents for a given query from the vector store."""
         q_vec = self._embedder.embed_query(query)
+        
+        where_filter = {"language": language, "category": category}
+        log.info(f"Performing dense retrieval for query: '{query}' with filter: {where_filter}", extra={'log_type': 'INFO'})
 
-        hits = self._store.query(q_vec, n_results=top_k, where={
-            "language": language,
-            "category": category,
-        })
+        hits = self._store.query(q_vec, n_results=top_k, where=where_filter)
+        log.info(f"Found {len(hits)} dense hits.", extra={'log_type': 'INFO'})
 
         results: list[dict[str, Any]] = []
 

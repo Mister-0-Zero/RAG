@@ -1,5 +1,9 @@
+"""
+Provides an Elasticsearch-based lexical retriever.
+"""
 from __future__ import annotations
 
+import logging
 from typing import Any, List
 
 from elasticsearch.helpers import bulk
@@ -7,15 +11,21 @@ from elasticsearch.helpers import bulk
 from search.es_client import get_es
 from rag.chunking import Chunk
 
+log = logging.getLogger(__name__)
+
 
 class ElasticsearchLexicalRetriever:
+    """Manages indexing and searching text chunks in Elasticsearch."""
     def __init__(self, index_name: str = "hd_chunks") -> None:
+        """Initializes the Elasticsearch client and ensures the index exists."""
         self._es = get_es()
         self._index_name = index_name
         self._ensure_index()
 
     def _ensure_index(self) -> None:
+        """Creates the Elasticsearch index with the correct mapping if it doesn't exist."""
         if not self._es.indices.exists(index=self._index_name):
+            log.info(f"Creating Elasticsearch index: {self._index_name}", extra={'log_type': 'INFO'})
             body = {
                 "mappings": {
                     "properties": {
@@ -34,10 +44,11 @@ class ElasticsearchLexicalRetriever:
             self._es.indices.create(index=self._index_name, body=body)
 
     def index_chunks(self, chunks: List[Chunk], clear: bool = True) -> None:
+        """Indexes a list of chunks into Elasticsearch."""
         if clear:
-            self._es.indices.delete(index=self._index_name)
-            self._ensure_index()
+            self.clear_index()
 
+        log.info(f"Indexing {len(chunks)} chunks into Elasticsearch...", extra={'log_type': 'INFO'})
         actions = []
         for c in chunks:
             actions.append({
@@ -57,13 +68,17 @@ class ElasticsearchLexicalRetriever:
             })
 
         bulk(self._es, actions)
+        log.info("Finished indexing.", extra={'log_type': 'INFO'})
 
     def clear_index(self) -> None:
+        """Deletes and recreates the Elasticsearch index."""
+        log.info(f"Clearing Elasticsearch index: {self._index_name}", extra={'log_type': 'INFO'})
         if self._es.indices.exists(index=self._index_name):
             self._es.indices.delete(index=self._index_name)
         self._ensure_index()
 
     def search(self, query: str, top_k: int = 10, language: str | None = None, category: str | None = None) -> List[Any]:
+        """Performs a lexical search against the Elasticsearch index."""
         filters: list[dict[str, Any]] = []
 
         if language in ("ru", "en"):
@@ -73,7 +88,8 @@ class ElasticsearchLexicalRetriever:
 
         if category in ("gate", "channel", "center"):
             filters.append({"term": {"category": category}})
-
+        
+        log.info(f"Performing lexical search for query: '{query}' with filters: {filters}", extra={'log_type': 'INFO'})
 
         body = {
             "query": {
@@ -93,6 +109,7 @@ class ElasticsearchLexicalRetriever:
         resp = self._es.search(index=self._index_name, body=body)
 
         hits = resp["hits"]["hits"]
+        log.info(f"Found {len(hits)} lexical hits.", extra={'log_type': 'INFO'})
 
         results: list[dict[str, Any]] = []
         for h in hits:

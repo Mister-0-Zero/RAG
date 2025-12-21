@@ -1,24 +1,36 @@
+"""
+Provides a hybrid retriever that combines dense and lexical search results.
+"""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from rag.chunking import Chunk
 from rag.retrieval import DenseRetriever
 from rag.lexical_es import ElasticsearchLexicalRetriever
 
+log = logging.getLogger(__name__)
+
 
 class HybridRetriever:
+    """Combines results from a DenseRetriever and an ElasticsearchLexicalRetriever."""
     def __init__(
         self,
         dense: DenseRetriever,
         lexical: ElasticsearchLexicalRetriever,
         alpha: float = 0.5,
     ) -> None:
+        """
+        Initializes the HybridRetriever with dense and lexical retrievers and a weighting factor.
+        """
         self._dense = dense
         self._lexical = lexical
         self._alpha = alpha
+        log.info(f"HybridRetriever initialized with alpha={alpha}", extra={'log_type': 'INFO'})
 
     def build_index(self, chunks: list[Chunk], clear: bool = True) -> None:
+        """Builds the index for both the dense and lexical retrievers."""
         self._dense.build_index(chunks, clear=clear)
         self._lexical.index_chunks(chunks, clear=clear)
 
@@ -29,7 +41,7 @@ class HybridRetriever:
         category: str | None = None,
         candidate_k: int = 24,
     ) -> list[dict[str, Any]]:
-
+        """Retrieves and fuses results from dense and lexical retrievers for a given query."""
         dense_hits = self._dense.retrieve(
             query,
             top_k=candidate_k,
@@ -44,11 +56,9 @@ class HybridRetriever:
             language=language,
             category=category,
         )
+        log.info(f"Retrieved {len(dense_hits)} dense hits and {len(lex_hits)} lexical hits.", extra={'log_type': 'INFO'})
 
         candidates: dict[str, dict[str, Any]] = {}
-
-        for h in dense_hits:
-            ch: Chunk = h["main_chunk"]
 
         # 1) merge dense
         for h in dense_hits:
