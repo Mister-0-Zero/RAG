@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from rag.config import RAGConfig
+from rag.compressor import ContextCompressor
 from rag.logger import setup_logging
 from rag.pipeline import build_hybrid_retriever
 from rag.rerank import Reranker
@@ -30,6 +31,7 @@ def main() -> None:
 
     es = get_es()
     check_es_or_die(es)
+    neighbors = 3
 
     cfg = RAGConfig()
     logging.info("Строим hybrid-ретривер", extra={'log_type': 'INFO'})
@@ -37,6 +39,8 @@ def main() -> None:
     logging.info("Готово.", extra={'log_type': 'INFO'})
 
     logging.info("Введите вопрос (или exit):", extra={'log_type': 'INFO'})
+
+    compressor = ContextCompressor(cfg)
 
     while True:
         query = input("> ").strip()
@@ -65,27 +69,28 @@ def main() -> None:
             continue
 
         for r in results:
-            context = retriever._dense._store.get_neighbors(r["main_chunk"], neighbors_forward=3)
-            final.append({**r, "context": context})
+            context = retriever._dense._store.get_neighbors(r["main_chunk"], neighbors_forward=neighbors)
 
-        for i, r in enumerate(final, start=1):
             score = r.get("score", 0.0)
             dense_score = r.get("dense_score", 0.0)
             lexical_score = r.get("lexical_score", 0.0)
             lexical_norm = r.get("lexical_norm", 0.0)
             rerank_score = r.get("rerank_score", 0.0)
-
             doc_name = r['main_chunk'].doc_name
-            context_chunks = r['context']
             main_chunk = r["main_chunk"]
-            full_text = "\n\n".join([c.text for c in context_chunks])
-
             logging.info(f"=== Результат {i} (score={score:.4f}, rerank={rerank_score:.4f}, dense={dense_score:.4f}, lexical={lexical_score:.4f}, lexical_norm={lexical_norm:.4f}) ===", extra={'log_type': 'MODEL_RESPONSE'})
             logging.info(f"Источник: {doc_name}, doc_id: {main_chunk.doc_id}, Категория: {main_chunk.category}, Язык: {main_chunk.language}", extra={'log_type': 'METADATA'})
-            logging.info(f"Фрагмент: {full_text}", extra={'log_type': 'MODEL_RESPONSE'})
+            logging.debug(f"Контекст до сжатия: {context}")
             logging.info("-" * 10, extra={'log_type': 'MODEL_RESPONSE'})
 
-        print()
+            compressed_context = compressor.compress(question=query, chunks=context, neighbors=neighbors + 2)
+            final.append({**r, "context": context})
+
+
+        logging.info("=== Сжатый контекст ===", extra={'log_type': 'MODEL_RESPONSE'})
+        logging.info(*[text + "\n\n" for r, text in enumerate(compressed_context)], extra={'log_type': 'MODEL_RESPONSE'})
+
+
 
 if __name__ == "__main__":
     main()
