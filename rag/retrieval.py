@@ -26,17 +26,6 @@ class DenseRetriever:
         self._chunks_by_id: dict[str, Chunk] = {}
         self._chunks_by_doc: dict[str, list[Chunk]] = {}
 
-    def get_neighbors(self, chunk: Chunk, neighbors: int = 0) -> list[Chunk]:
-        if neighbors <= 0:
-            return [chunk]
-        doc_chunks = self._chunks_by_doc.get(chunk.doc_id, [])
-        if not doc_chunks:
-            return [chunk]
-        idx = chunk.order
-        start = idx - 1 if idx - 1 >= 0 else 0
-        end = min(len(doc_chunks), idx + neighbors + 1)
-        return doc_chunks[start:end]
-
     def build_index(self, chunks: list[Chunk], clear: bool = True) -> None:
         print("Построение индекса векторного хранилища...")
 
@@ -58,16 +47,10 @@ class DenseRetriever:
     def retrieve(self, query: str, top_k: int = 5, language: str | None = None, category: str | None = None, neighbors: int = 0) -> list[dict[str, Any]]:
         q_vec = self._embedder.embed_query(query)
 
-        where: dict[str, Any] = {}
-        if language:
-            where["language"] = language
-        if category:
-            where["category"] = category
-
-        if not where:
-            where = None
-
-        hits = self._store.query(q_vec, n_results=top_k, where=where)
+        hits = self._store.query(q_vec, n_results=top_k, where={
+            "language": language,
+            "category": category,
+        })
 
         results: list[dict[str, Any]] = []
 
@@ -75,9 +58,20 @@ class DenseRetriever:
             chunk_id = h.get("id")
             distance = h.get("distance")
 
-            chunk = self._chunks_by_id.get(chunk_id)
-            if chunk is None:
-                continue
+            meta = h.get("metadata", {})
+            text = h.get("document")
+
+            chunk = Chunk(
+                id=chunk_id,
+                doc_id=meta.get("doc_id"),
+                doc_name=meta.get("doc_name", "unknown"),
+                text=text,
+                order=meta.get("order", 0),
+                language=meta.get("language"),
+                category=meta.get("category"),
+                start_char=meta.get("start_char"),
+                end_char=meta.get("end_char"),
+            )
 
             idx = chunk.order
             if neighbors > 0:
@@ -93,7 +87,7 @@ class DenseRetriever:
                     "chunk": context_chunks,
                     "main_chunk": chunk,
                     "distance": distance,
-                    "score": 1.0 - distance if distance is not None else None,
+                    "score": 1.0 / (1.0 + distance) if distance is not None else None,
                     "metadata": h.get("metadata", {}),
                 }
             )

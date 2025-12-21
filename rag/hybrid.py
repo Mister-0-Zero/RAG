@@ -25,11 +25,9 @@ class HybridRetriever:
     def retrieve(
         self,
         query: str,
-        top_k: int = 5,
         language: str | None = None,
         category: str | None = None,
-        neighbors: int = 0,
-        candidate_k: int = 20,
+        candidate_k: int = 24,
     ) -> list[dict[str, Any]]:
 
         dense_hits = self._dense.retrieve(
@@ -48,6 +46,9 @@ class HybridRetriever:
         )
 
         candidates: dict[str, dict[str, Any]] = {}
+
+        for h in dense_hits:
+            ch: Chunk = h["main_chunk"]
 
         # 1) merge dense
         for h in dense_hits:
@@ -99,25 +100,4 @@ class HybridRetriever:
                 }
             )
 
-        scored.sort(key=lambda x: x["score"], reverse=True)
-        top = scored[:top_k]
-
-        # 4) add neighbors only for final top
-        final: list[dict[str, Any]] = []
-        for r in top:
-            ch: Chunk = r["main_chunk"]
-            context = self._dense.get_neighbors(ch, neighbors=neighbors)
-
-            final.append(
-                {
-                    "chunk": context,
-                    "main_chunk": ch,
-                    "score": r["score"],
-                    "dense_score": r["dense_score"],
-                    "lexical_score": r["lexical_score"],
-                    "lexical_norm": r["lexical_norm"],
-                    "metadata": r["metadata"],
-                }
-            )
-
-        return final
+        return scored

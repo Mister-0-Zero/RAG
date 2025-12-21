@@ -8,6 +8,7 @@ from pathlib import Path
 from rag.config import RAGConfig
 from rag.logger import setup_logging
 from rag.pipeline import build_hybrid_retriever
+from rag.rerank import Reranker
 from search.es_client  import get_es, check_es_or_die
 from support_function.detect_function import *
 import argparse
@@ -26,9 +27,6 @@ def main() -> None:
     logging.getLogger("elastic_transport").setLevel(logging.WARNING)
     logging.getLogger("elasticsearch").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-    # for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
-    #     os.environ.pop(k, None)
 
     es = get_es()
     check_es_or_die(es)
@@ -56,24 +54,33 @@ def main() -> None:
 
         logging.info(f"Язык: {language}, Категория: {category}", extra={'log_type': 'METADATA'})
 
-        results = retriever.retrieve(query, top_k=3, language=language, category=category, neighbors=3)
+        results = retriever.retrieve(query, language=language, category=category)
+
+        reranker = Reranker()
+        results = reranker.rerank(query, results, top_k=3)
+        final = []
 
         if not results:
             logging.error("Ничего не нашлось.\n")
             continue
 
-        for i, r in enumerate(results, start=1):
+        for r in results:
+            context = retriever._dense._store.get_neighbors(r["main_chunk"], neighbors_forward=3)
+            final.append({**r, "context": context})
+
+        for i, r in enumerate(final, start=1):
             score = r.get("score", 0.0)
-            dense_score = r.get("score", 0.0)
+            dense_score = r.get("dense_score", 0.0)
             lexical_score = r.get("lexical_score", 0.0)
             lexical_norm = r.get("lexical_norm", 0.0)
+            rerank_score = r.get("rerank_score", 0.0)
 
             doc_name = r['main_chunk'].doc_name
-            context_chunks = r['chunk']
+            context_chunks = r['context']
             main_chunk = r["main_chunk"]
             full_text = "\n\n".join([c.text for c in context_chunks])
 
-            logging.info(f"=== Результат {i} (score={score:.4f}, dense={dense_score:.4f}, lexical={lexical_score:.4f}, lexical_norm={lexical_norm:.4f}) ===", extra={'log_type': 'MODEL_RESPONSE'})
+            logging.info(f"=== Результат {i} (score={score:.4f}, rerank={rerank_score:.4f}, dense={dense_score:.4f}, lexical={lexical_score:.4f}, lexical_norm={lexical_norm:.4f}) ===", extra={'log_type': 'MODEL_RESPONSE'})
             logging.info(f"Источник: {doc_name}, doc_id: {main_chunk.doc_id}, Категория: {main_chunk.category}, Язык: {main_chunk.language}", extra={'log_type': 'METADATA'})
             logging.info(f"Фрагмент: {full_text}", extra={'log_type': 'MODEL_RESPONSE'})
             logging.info("-" * 10, extra={'log_type': 'MODEL_RESPONSE'})

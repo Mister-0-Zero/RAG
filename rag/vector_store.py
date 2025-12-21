@@ -7,7 +7,6 @@ import chromadb
 from rag.config import RAGConfig
 from rag.chunking import Chunk
 
-
 class VectorStore:
     def __init__(
         self,
@@ -32,7 +31,7 @@ class VectorStore:
 
         ids = [chunk.id for chunk in chunks]
         documents = [chunk.text for chunk in chunks]
-        metadatas = [{"doc_id": c.doc_id, "order": c.order, "language": c.language, "category": c.category} for c in chunks]
+        metadatas = [{"doc_id": c.doc_id, "doc_name": c.doc_name, "order": c.order, "language": c.language, "category": c.category, "start_char": c.start_char, "end_char": c.end_char} for c in chunks]
 
         self._collection.add(
             ids=ids,
@@ -40,6 +39,37 @@ class VectorStore:
             embeddings=embeddings,
             metadatas=metadatas,
         )
+
+    def get_neighbors(self, chunk: Chunk, neighbors_forward: int = 3) -> list[Chunk]:
+        hits = self.search_by_metadata(
+            where = {
+                "$and": [
+                    {"doc_id": chunk.doc_id},
+                    {"order": {"$gte": chunk.order - 1}},
+                    {"order": {"$lte": chunk.order + neighbors_forward}},
+                ]
+            }
+        )
+
+        chunks = []
+        for h in hits:
+            meta = h["metadata"]
+            chunks.append(
+                Chunk(
+                    id=h["id"],
+                    doc_id=meta["doc_id"],
+                    doc_name=meta["doc_name"],
+                    text=h["document"],
+                    order=meta["order"],
+                    language=meta.get("language"),
+                    category=meta.get("category"),
+                    start_char=meta.get("start_char"),
+                    end_char=meta.get("end_char"),
+                )
+            )
+
+        return sorted(chunks, key=lambda c: c.order)
+
 
     def query(self, query_embedding: list[float], n_results: int = 5, where: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         kwargs: dict[str, Any] = {
@@ -93,6 +123,32 @@ class VectorStore:
                 }
             )
         return hits
+
+    def search_by_metadata(
+        self,
+        where: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+
+        result = self._collection.get(
+            where=where,
+        )
+
+        ids = result.get("ids", [])
+        documents = result.get("documents", [])
+        metadatas = result.get("metadatas", [])
+
+        hits = []
+        for i in range(len(ids)):
+            hits.append(
+                {
+                    "id": ids[i],
+                    "document": documents[i],
+                    "metadata": metadatas[i],
+                }
+            )
+
+        return hits
+
 
     def clear_index(self, condition: dict | None = None) -> None:
             if condition:
