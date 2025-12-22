@@ -4,9 +4,8 @@ This module provides a context compression mechanism using a language model.
 from __future__ import annotations
 
 import logging
+import requests
 from typing import List
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from rag.chunking import Chunk
 from rag.config import RAGConfig
@@ -15,89 +14,84 @@ log = logging.getLogger(__name__)
 
 
 class ContextCompressor:
-    """
-    Manages the compression of text chunks into a more concise context using a pre-trained language model.
-    """
-    def __init__(
-        self,
-        cfg: RAGConfig,
-        neighbors: int = 5,
-    ) -> None:
-        """
-        Initializes the ContextCompressor, loading the specified language model and tokenizer.
-        """
-        log.info("Loading compressor model: %s", cfg.model_name_for_compressor)
-        self.device = cfg.device
+    def __init__(self, cfg: RAGConfig, neighbors: int = 5) -> None:
+        self.model_name = cfg.model_name_for_compressor
+        self.ollama_url = cfg.ollama_url
         self.max_new_tokens = cfg.max_tokens_after_compressed_per_result_ * neighbors
         self.temperature = cfg.temperature_model_compressor
-        self.model_name = cfg.model_name_for_compressor
 
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(
+        log.info(
+            "Context compressor initialized (ollama model=%s)",
             self.model_name,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-            device_map="auto" if self.device == "cuda" else None,
-        ).eval()
+        )
 
     def compress(self, question: str, chunks: List[Chunk]) -> str:
-        """
-        Compresses a list of text chunks relevant to a given question using the loaded language model.
-        """
         prompt = self._build_prompt(question, chunks)
-        log.info(f"Context before compression:\n{prompt}", extra={"log_type": "CONTEXT_BEFORE"})
 
-        inputs = self.tokenizer(
+        log.debug(
+            "Context before compression:\n%s",
             prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=4096,
-        ).to(self.model.device)
-
-        with torch.no_grad():
-            output = self.model.generate(
-                **inputs,
-                max_new_tokens=self.max_new_tokens,
-                do_sample=False,
-                temperature=self.temperature,
-                eos_token_id=self.tokenizer.eos_token_id,
-            )
-
-        text = self.tokenizer.decode(
-            output[0][inputs["input_ids"].shape[-1]:],
-            skip_special_tokens=True,
+            extra={"log_type": "CONTEXT_BEFORE"},
         )
-        
-        log.info(f"Context after compression:\n{text.strip()}", extra={"log_type": "CONTEXT_AFTER"})
-        return text.strip()
+
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": self.temperature,
+                "num_predict": self.max_new_tokens,
+                "repeat_penalty": 1.1,
+            },
+        }
+
+        resp = requests.post(
+            f"{self.ollama_url}/api/generate",
+            json=payload,
+            timeout=300,
+        )
+        resp.raise_for_status()
+
+        text = resp.json().get("response", "").strip()
+
+        log.debug(
+            "Context after compression:\n%s",
+            text,
+            extra={"log_type": "CONTEXT_AFTER"},
+        )
+
+        return text
 
     def _build_prompt(self, question: str, chunks: List[Chunk]) -> str:
-        """
-        Constructs the prompt string for the language model based on the question and provided chunks.
-        """
         fragments = []
         for i, ch in enumerate(chunks, 1):
             fragments.append(f"[Фрагмент {i}]\n{ch.text}")
 
         fragments_text = "\n\n".join(fragments)
 
-        return f"""Ты — система сжатия контекста для Retrieval-Augmented Generation. Вопрос пользователя:
-                    {question}
+        return f"""Ты — система сжатия контекста для Retrieval-Augmented Generation.
+Вопрос пользователя:
+{question}
 
-                    Ниже приведен фрагмент текста из базы знаний.
-                    Твоя задача — оставить ТОЛЬКО информацию, необходимую для ответа на вопрос.
+Ниже приведен фрагмент текста из базы знаний.
+Твоя задача — оставить ТОЛЬКО информацию, необходимую для ответа на вопрос.
 
-                    Правила:
-                    - Удали повторы и неинформативные части
-                    - Сохрани только важные факты, относящиеся к вопросу
-                    - Сохрани определения, ключевые свойства, факты
-                    - НИЧЕГО не добавляй от себя
-                    - Не отвечай на вопрос, только сжимай текст
-                    - Если фрагмент не содержит полезной информации для ответа на вопрос, ничего не добавляй.
+Правила:
+- Удали явные повторы и технический мусор
+- Сохрани связный текст, который помогает понять тему вопроса
+- Сохрани определения, пояснения и важные описания, даже если они не отвечают на вопрос напрямую
+- Не сокращай фразы до телеграфного стиля — текст должен оставаться читаемым
+- НИЧЕГО не добавляй от себя и не делай выводов
+- Не отвечай на вопрос, только подготавливай контекст
+- Если фрагмент частично полезен — сохрани полезную часть
+- Если фрагмент не относится к теме совсем — можешь его опустить
 
-                    Формат ответа:
-                    <сжатый контекст>
 
-                    Фрагмент:
-                    {fragments_text}
+Фрагмент:
+{fragments_text}
 
-                    Сжатый контекст: """
+Формат ответа:
+<сжатый контекст>
+
+Сжатый контекст:
+"""

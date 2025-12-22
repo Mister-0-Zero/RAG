@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import sys
 import logging
-import os
-from pathlib import Path
 
 from rag.config import RAGConfig
 from rag.compressor import ContextCompressor
@@ -44,7 +42,7 @@ def main() -> None:
     neighbors = 3
 
     cfg = RAGConfig()
-    log.info("Строим hybrid-ретривер", extra={'log_type': 'INFO'})
+    log.info("We are starting to build a hybrid retriever", extra={'log_type': 'INFO'})
     retriever = build_hybrid_retriever(cfg=cfg, chunk_size=600, overlap=150, reindex=reindex)
     log.info("Готово.", extra={'log_type': 'INFO'})
 
@@ -88,9 +86,11 @@ def main() -> None:
             rerank_score = r.get("rerank_score", 0.0)
             doc_name = r['main_chunk'].doc_name
             main_chunk = r["main_chunk"]
-            log.info(f"=== Результат {i} (score={score:.4f}, rerank={rerank_score:.4f}, dense={dense_score:.4f}, lexical={lexical_score:.4f}, lexical_norm={lexical_norm:.4f}) ===", extra={'log_type': 'MODEL_RESPONSE'})
+            text = [r.text + " " for r in context]
+            log.info(f"=== Результат (score={score:.4f}, rerank={rerank_score:.4f}, dense={dense_score:.4f}, lexical={lexical_score:.4f},\
+                      lexical_norm={lexical_norm:.4f}) ===", extra={'log_type': 'MODEL_RESPONSE'})
             log.info(f"Источник: {doc_name}, doc_id: {main_chunk.doc_id}, Категория: {main_chunk.category}, Язык: {main_chunk.language}", extra={'log_type': 'METADATA'})
-            log.debug(f"Контекст до сжатия: {context}")
+            log.info(f"Контекст до сжатия: {text}", extra={'log_type': 'MODEL_RESPONSE'})
             log.info("-" * 10, extra={'log_type': 'MODEL_RESPONSE'})
 
             compressed_context = compressor.compress(question=query, chunks=context)

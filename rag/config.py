@@ -17,25 +17,28 @@ class RAGConfig(BaseModel):
     """
     data_raw: Path = Path("data/raw")
     """The path to the directory containing raw data for ingestion."""
-    
+
     embeddings_model: str = "intfloat/multilingual-e5-base"
     """The name of the SentenceTransformers model for creating embeddings."""
-    
+
     chroma_db: Path = Path("data/vector_db")
     """The path to the directory where the Chroma vector database is stored."""
-    
+
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     """The name of the cross-encoder model used for reranking search results."""
-    
-    model_name_for_compressor: str = "meta-llama/Llama-3.2-3B-Instruct"
+
+    model_name_for_compressor: str = "qwen2.5:3b-instruct"
     """The name of the large language model used for context compression."""
-    
+
     max_tokens_after_compressed_per_result_: int = 256
     """The maximum number of tokens to keep for each result after compression."""
-    
+
     temperature_model_compressor: float = 0.0
     """The temperature setting for the compressor model to control randomness."""
-    
+
+    ollama_url: str = "http://localhost:11435"
+    """The URL for the Ollama API endpoint."""
+
     device: str | None = None
     """The compute device ('cuda' or 'cpu') to be used for model inference."""
 

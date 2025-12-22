@@ -16,6 +16,29 @@ from support_function.detect_function import detect_category
 
 log = logging.getLogger(__name__)
 
+def normalize_text(text: str) -> str:
+    """Normalizes text by standardizing line endings and removing trailing whitespace."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    lines = [line.rstrip() for line in text.split("\n")]
+
+    normalized_lines: list[str] = []
+
+    for line in lines:
+        if line != "":
+            normalized_lines.append(line)
+
+    return "\n".join(normalized_lines).strip()
+
+class RawDocument(BaseModel):
+    """A metadata class representing a raw document."""
+    id: str
+    path: Path
+    text: str
+    source: str
+    doc_type: str
+    category: str | None = None
+
 def read_txt(path: Path) -> str:
     """Reads text content from a .txt file."""
     with path.open(encoding="utf-8", errors="ignore") as f:
@@ -78,7 +101,7 @@ def ingest_directory(path_dir: Path) -> list[RawDocument]:
                 category=category,
             )
         )
-    
+
     log.info(
         f"Finished ingestion. Ingested {supported_files} supported files. "
         f"Skipped {unsupported_files} unsupported files.",
