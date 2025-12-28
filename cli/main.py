@@ -15,7 +15,10 @@ from rag.pipeline import build_hybrid_retriever
 from rag.rerank import Reranker
 from search.es_client  import get_es, check_es_or_die
 from support_function.detect_function import *
+from rag.llm import init_llm_client
+from rag.answer import AnswerGenerator
 import argparse
+from dotenv import load_dotenv
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +35,9 @@ def main() -> None:
     Main function for the RAG CLI. It sets up the pipeline, processes user input,
     and returns relevant information based on the RAG model.
     """
+
+    load_dotenv()
+
     args = parse_args()
     reindex = args.reindex
 
@@ -42,6 +48,9 @@ def main() -> None:
     neighbors = 3
 
     cfg = RAGConfig()
+
+    llm_client = init_llm_client(cfg)
+    answer_generator = AnswerGenerator(llm_client, cfg)
     log.info("We are starting to build a hybrid retriever", extra={'log_type': 'INFO'})
     retriever = build_hybrid_retriever(cfg=cfg, chunk_size=600, overlap=150, reindex=reindex)
     log.info("Готово.", extra={'log_type': 'INFO'})
@@ -97,9 +106,20 @@ def main() -> None:
             final.append({**r, "compressed_context": compressed_context})
 
 
-        log.info("=== Сжатый контекст ===", extra={'log_type': 'MODEL_RESPONSE'})
-        for item in final:
-            log.info(item["compressed_context"] + "\n\n", extra={'log_type': 'MODEL_RESPONSE'})
+        # ===== Answering =====
+        answer_result = answer_generator.generate(
+            query=query,
+            final=final,
+        )
+
+        log.info("=== ОТВЕТ МОДЕЛИ ===", extra={'log_type': 'MODEL_RESPONSE'})
+        log.info(answer_result.answer, extra={'log_type': 'MODEL_RESPONSE'})
+
+        if answer_result.citations:
+            log.info(
+                f"Источники: {', '.join(answer_result.citations)}",
+                extra={'log_type': 'METADATA'}
+            )
 
 
 

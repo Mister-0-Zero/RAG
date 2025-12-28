@@ -4,3 +4,4 @@ data
 **/*.py[cod]
 **/__init__.py
 app.log
+.env

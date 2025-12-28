@@ -42,6 +42,22 @@ class RAGConfig(BaseModel):
     device: str | None = None
     """The compute device ('cuda' or 'cpu') to be used for model inference."""
 
+    local_or_API_model: str = "API"
+    """We will use the local or remote model. ('local' or 'API')"""
+
+    api_model_name: str = "llama-3.3-70b-versatile"
+    api_temperature: float = 0.5
+    api_timeout_s: int = 5
+    api_max_tokens: int = 2048
+
+    local_model_name  : str = "deepseek-r1:32b"
+    local_temperature: float = 0.5
+    local_timeout_s: float = 30
+    local_max_tokens: int = 2048
+
+    no_data_response: str = "Данных в базе знаний не нашлось."
+    enable_citations: bool = False
+
     def model_post_init(self, __context):
         """
         Determines the available compute device after the model is initialized.
