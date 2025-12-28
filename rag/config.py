@@ -46,17 +46,27 @@ class RAGConfig(BaseModel):
     """We will use the local or remote model. ('local' or 'API')"""
 
     api_model_name: str = "llama-3.3-70b-versatile"
+    """The name of the model to use via the API."""
     api_temperature: float = 0.5
+    """The temperature for the API model, controlling creativity."""
     api_timeout_s: int = 5
+    """The timeout in seconds for API requests."""
     api_max_tokens: int = 2048
+    """The maximum number of tokens for the API model to generate."""
 
-    local_model_name  : str = "deepseek-r1:32b"
+    local_model_name: str = "deepseek-r1:32b"
+    """The name of the local model to use via Ollama."""
     local_temperature: float = 0.5
+    """The temperature for the local model."""
     local_timeout_s: float = 30
+    """The timeout in seconds for local model requests."""
     local_max_tokens: int = 2048
+    """The maximum number of tokens for the local model to generate."""
 
     no_data_response: str = "Данных в базе знаний не нашлось."
+    """The default response when no relevant information is found."""
     enable_citations: bool = False
+    """Whether to include citations in the answer."""
 
     def model_post_init(self, __context):
         """
