@@ -67,6 +67,8 @@ class RAGConfig(BaseModel):
     """The default response when no relevant information is found."""
     enable_citations: bool = False
     """Whether to include citations in the answer."""
+    extended_logs: bool = False
+    """Whether to include the prompt, initial context, and score in the model's response."""
 
     def model_post_init(self, __context):
         """

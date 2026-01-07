@@ -26,6 +26,8 @@ class AnswerResult:
     """
     answer: str
     citations: Optional[list[str]] = None
+    prompt: Optional[str] = None
+    final_context: Optional[list[dict]] = None
 
 
 class AnswerGenerator:
@@ -53,21 +55,32 @@ class AnswerGenerator:
             final: A list of dictionaries, where each contains the compressed context
                    and metadata about the source chunk.
         Returns:
-            An AnswerResult object containing the answer and citations.
+            An AnswerResult object containing the answer and other data for logging.
         """
         lang = detect_language(query)
 
         if not final:
             log.warning("No retrieved items. Returning no_data_response.", extra={'log_type': 'WARNING'})
-            return AnswerResult(answer=self.cfg.no_data_response, citations=None)
+            return AnswerResult(
+                answer=self.cfg.no_data_response,
+                citations=None,
+                prompt=None,
+                final_context=final,
+            )
 
         context_text = self._build_context_text(final)
         if not context_text.strip():
             log.warning("Context is empty after processing. Returning no_data_response.", extra={'log_type': 'WARNING'})
-            return AnswerResult(answer=self.cfg.no_data_response, citations=None)
+            return AnswerResult(
+                answer=self.cfg.no_data_response,
+                citations=None,
+                prompt=None,
+                final_context=final,
+            )
 
         prompt = self._build_prompt(query=query, context_text=context_text, lang=lang)
-        log.info("Prompt: \n%s", prompt, extra={'log_type': 'INFO'})
+        if self.cfg.extended_logs:
+            log.info("Prompt: \n%s", prompt, extra={'log_type': 'INFO'})
 
         log.info(
             "Calling LLM for answer. Context chars: %d, Items: %d",
@@ -78,7 +91,12 @@ class AnswerGenerator:
 
         citations = self._extract_doc_names(final) if self.cfg.enable_citations else None
 
-        return AnswerResult(answer=answer_text, citations=citations)
+        return AnswerResult(
+            answer=answer_text,
+            citations=citations,
+            prompt=prompt,
+            final_context=final,
+        )
 
     def _build_context_text(self, final: list[dict]) -> str:
         """Constructs a single string of context from the compressed results."""
