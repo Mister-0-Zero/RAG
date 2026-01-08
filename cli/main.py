@@ -20,6 +20,7 @@ from search.es_client import get_es, check_es_or_die
 from support_function.detect_function import detect_language, detect_category
 from rag.llm import init_llm_client
 from rag.answer import AnswerGenerator, AnswerResult
+from rag.query_decomposer import QueryDecomposer
 
 log = logging.getLogger(__name__)
 
@@ -35,25 +36,27 @@ def setup_pipeline(reindex: bool, cfg: RAGConfig) -> SimpleNamespace:
         A namespace object containing the initialized pipeline components.
     """
     log.info("Initializing RAG pipeline...", extra={'log_type': 'INFO'})
-    
+
     es = get_es()
     check_es_or_die(es)
 
     llm_client = init_llm_client(cfg)
+    decomposer = QueryDecomposer(llm_client, cfg)
     answer_generator = AnswerGenerator(llm_client, cfg)
-    
+
     log.info("Building hybrid retriever...", extra={'log_type': 'INFO'})
     retriever = build_hybrid_retriever(cfg=cfg, chunk_size=600, overlap=150, reindex=reindex)
     log.info("Retriever is ready.", extra={'log_type': 'INFO'})
 
     reranker = Reranker()
     compressor = ContextCompressor(cfg)
-    
+
     return SimpleNamespace(
         retriever=retriever,
         reranker=reranker,
         compressor=compressor,
         answer_generator=answer_generator,
+        decomposer=decomposer,
         cfg=cfg,
         neighbors=3,
     )
@@ -62,7 +65,7 @@ def process_query(query: str, pipeline: SimpleNamespace) -> None:
     """
     Processes a single user query through the RAG pipeline, gathers all necessary
     information, and then logs it according to the configuration.
-    
+
     Args:
         query: The user's input query.
         pipeline: The namespace object with all pipeline components.
@@ -72,7 +75,13 @@ def process_query(query: str, pipeline: SimpleNamespace) -> None:
     log.info(f"Language: {language}, Category: {category}", extra={'log_type': 'METADATA'})
 
     # 1. Retrieval
-    results = pipeline.retriever.retrieve(query, language=language, category=category)
+    subqueries = pipeline.decomposer.decompose(query)
+
+    results = []
+    for sq in subqueries:
+        results.extend(
+            pipeline.retriever.retrieve(sq, language=language, category=category)
+        )
     if not results:
         log.warning("No documents found by retriever.", extra={'log_type': 'WARNING'})
         log.info(pipeline.cfg.no_data_response, extra={'log_type': 'MODEL_RESPONSE'})
@@ -108,8 +117,8 @@ def process_query(query: str, pipeline: SimpleNamespace) -> None:
 
 
 def log_final_result(
-    answer_result: AnswerResult, 
-    initial_contexts: dict[str, str], 
+    answer_result: AnswerResult,
+    initial_contexts: dict[str, str],
     cfg: RAGConfig
 ) -> None:
     """
@@ -126,7 +135,7 @@ def log_final_result(
 
     if answer_result.citations:
         log.info(f"Sources: {', '.join(answer_result.citations)}", extra={'log_type': 'METADATA'})
-    
+
     log.info("--- EXTENDED LOGS ---", extra={'log_type': 'INFO'})
 
     if answer_result.prompt:
@@ -150,7 +159,7 @@ def log_final_result(
             initial_context = initial_contexts.get(main_chunk.id)
             if initial_context:
                 log.info(f"Initial Context: {initial_context}", extra={'log_type': 'DEBUG'})
-            
+
             compressed_context = item.get("compressed_context", "")
             log.info(f"Compressed Context: {compressed_context}", extra={'log_type': 'DEBUG'})
     log.info("=" * 56, extra={'log_type': 'INFO'})
@@ -170,7 +179,7 @@ def run_cli(reindex: bool) -> None:
             query = input("> ").strip()
             if not query:
                 continue
-            
+
             if query.lower() in {"exit", "quit"}:
                 log.info("Exiting. Goodbye!", extra={'log_type': 'INFO'})
                 sys.exit(0)
@@ -189,10 +198,10 @@ if __name__ == "__main__":
     load_dotenv()
     parser = argparse.ArgumentParser(description="A command-line interface for the RAG pipeline.")
     parser.add_argument(
-        '--reindex', 
-        action='store_true', 
+        '--reindex',
+        action='store_true',
         help='If set, the document index will be rebuilt before starting.'
     )
     args = parser.parse_args()
-    
+
     run_cli(reindex=args.reindex)

@@ -70,6 +70,9 @@ class RAGConfig(BaseModel):
     extended_logs: bool = False
     """Whether to include the prompt, initial context, and score in the model's response."""
 
+    min_words_for_decomposition: int = 5
+    """The minimum number of words in a query to trigger decomposition."""
+
     def model_post_init(self, __context):
         """
         Determines the available compute device after the model is initialized.
