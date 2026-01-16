@@ -21,8 +21,9 @@ from support_function.detect_function import detect_language, detect_category
 from rag.llm import init_llm_client
 from rag.answer import AnswerGenerator, AnswerResult
 from rag.query_decomposer import QueryDecomposer
-from rag.users import USER_ROLES
+from rag.users import USERS
 from rag.acl_runtime import ACLRuntimeFilter
+from rag.auth import authenticate_user
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ def setup_pipeline(reindex: bool, cfg: RAGConfig) -> SimpleNamespace:
         acl_filter=acl_filter
     )
 
-def process_query(query: str, pipeline: SimpleNamespace) -> None:
+def process_query(query: str, pipeline: SimpleNamespace, user_role: str) -> None:
     """
     Processes a single user query through the RAG pipeline, gathers all necessary
     information, and then logs it according to the configuration.
@@ -74,9 +75,6 @@ def process_query(query: str, pipeline: SimpleNamespace) -> None:
         query: The user's input query.
         pipeline: The namespace object with all pipeline components.
     """
-
-    current_user = "admin"
-    user_role = USER_ROLES[current_user]
 
     language = detect_language(query)
     category = detect_category(query)
@@ -180,12 +178,11 @@ def log_final_result(
             log.info(f"Compressed Context: {compressed_context}", extra={'log_type': 'DEBUG'})
     log.info("=" * 56, extra={'log_type': 'INFO'})
 
-def run_cli(reindex: bool) -> None:
+def run_cli(reindex: bool, cfg: RAGConfig, user_role: str) -> None:
     """
     The main execution loop for the command-line interface.
     """
     setup_logging()
-    cfg = RAGConfig()
     pipeline = setup_pipeline(reindex=reindex, cfg=cfg)
 
     log.info("Enter your question (or 'exit' to quit):", extra={'log_type': 'INFO'})
@@ -201,7 +198,7 @@ def run_cli(reindex: bool) -> None:
                 sys.exit(0)
 
             log.info(f"Processing query: '{query}'", extra={'log_type': 'USER_QUERY'})
-            process_query(query, pipeline)
+            process_query(query, pipeline, user_role=user_role)
 
         except (KeyboardInterrupt, EOFError):
             log.info("\nExiting. Goodbye!", extra={'log_type': 'INFO'})
@@ -213,6 +210,8 @@ def run_cli(reindex: bool) -> None:
 if __name__ == "__main__":
     load_dotenv()
     parser = argparse.ArgumentParser(description="A command-line interface for the RAG pipeline.")
+    parser.add_argument("--user-role", type=str, help="User name")
+    parser.add_argument("--password", type=str, help="User password")
     parser.add_argument(
         '--reindex',
         action='store_true',
@@ -220,4 +219,20 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    run_cli(reindex=args.reindex)
+    cfg = RAGConfig()
+
+    username, user_role = authenticate_user(
+        user_role_arg=args.user_role,
+        password_arg=args.password,
+        default_role=cfg.default_role,
+        acl_enabled=cfg.acl,
+    )
+
+    log.info(
+        "Authenticated user='%s' role='%s'",
+        username,
+        user_role,
+        extra={'log_type': 'INFO'}
+    )
+
+    run_cli(reindex=args.reindex, cfg=cfg, user_role=user_role)

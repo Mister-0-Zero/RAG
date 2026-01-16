@@ -79,6 +79,8 @@ class RAGConfig(BaseModel):
     """The default permission for documents without explicit ACLs."""
     acl_rules_path: Path = Path("rag/acl_rules.yaml")
     """The path to the ACL rules YAML file."""
+    default_role: str = "guest"
+    """The default role assigned to users without specific roles."""
 
 
     def model_post_init(self, __context):
