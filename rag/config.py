@@ -73,7 +73,7 @@ class RAGConfig(BaseModel):
     min_words_for_decomposition: int = 5
     """The minimum number of words in a query to trigger decomposition."""
 
-    acl: bool = True
+    acl: bool = False
     """Whether to use Access Control Lists (ACL) for allowing to documents."""
     default_allow: bool = True
     """The default permission for documents without explicit ACLs."""
