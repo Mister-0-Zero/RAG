@@ -38,6 +38,8 @@ class RawDocument(BaseModel):
     source: str
     doc_type: str
     category: str | None = None
+    allowed_roles: str
+
 
 def read_txt(path: Path) -> str:
     """Reads text content from a .txt file."""
@@ -61,12 +63,17 @@ def read_pdf(path: Path) -> str:
     return "\n".join(texts)
 
 
-def ingest_directory(path_dir: Path) -> list[RawDocument]:
-    """Ingests all supported documents from a directory into a list of `RawDocument` objects."""
+def ingest_directory(path_dir: Path, cfg: RAGConfig) -> list[RawDocument]:
     log.info(f"Starting ingestion from directory: {path_dir}...", extra={'log_type': 'INFO'})
+
     documents: list[RawDocument] = []
     supported_files = 0
     unsupported_files = 0
+
+    acl_rules = None
+    if cfg.acl:
+        from rag.acl_rules import ACLRules
+        acl_rules = ACLRules.load(cfg.acl_rules_path)
 
     for file in path_dir.rglob("*"):
         if not file.is_file():
@@ -91,6 +98,23 @@ def ingest_directory(path_dir: Path) -> list[RawDocument]:
         category = detect_category(file)
         supported_files += 1
 
+        if cfg.acl and acl_rules:
+            relative_path = file.relative_to(path_dir).as_posix()
+            roles = acl_rules.resolve_roles(relative_path)
+
+            if roles is not None:
+                allowed_roles = "|".join(roles)
+            else:
+                allowed_roles = "*" if cfg.default_allow else ""
+        else:
+            allowed_roles = "*"
+
+        log.debug(
+            "Ingesting file: %s, assigned roles: %s",
+            file.name,
+            allowed_roles,
+        )
+
         documents.append(
             RawDocument(
                 id=file.stem,
@@ -99,6 +123,7 @@ def ingest_directory(path_dir: Path) -> list[RawDocument]:
                 source=file.name,
                 doc_type=doc_type,
                 category=category,
+                allowed_roles=allowed_roles,
             )
         )
 
@@ -110,7 +135,8 @@ def ingest_directory(path_dir: Path) -> list[RawDocument]:
     return documents
 
 
+
 def ingest_all(cfg: RAGConfig | None = None) -> list[RawDocument]:
     """A wrapper function to start the ingestion process using a `RAGConfig`."""
     cfg = cfg or RAGConfig()
-    return ingest_directory(cfg.data_raw)
+    return ingest_directory(cfg.data_raw, cfg)

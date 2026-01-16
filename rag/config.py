@@ -73,6 +73,14 @@ class RAGConfig(BaseModel):
     min_words_for_decomposition: int = 5
     """The minimum number of words in a query to trigger decomposition."""
 
+    acl: bool = True
+    """Whether to use Access Control Lists (ACL) for allowing to documents."""
+    default_allow: bool = True
+    """The default permission for documents without explicit ACLs."""
+    acl_rules_path: Path = Path("rag/acl_rules.yaml")
+    """The path to the ACL rules YAML file."""
+
+
     def model_post_init(self, __context):
         """
         Determines the available compute device after the model is initialized.

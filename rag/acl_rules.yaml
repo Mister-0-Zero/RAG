@@ -1,0 +1,12 @@
+rules:
+  - name: public_docs
+    path_prefix: "public/"
+    allow_roles: ["user", "expert", "admin"]
+
+  - name: private_docs
+    path_prefix: "private/"
+    allow_roles: ["expert", "admin"]
+
+  - name: absolutely_secret_docs
+    path_prefix: "absolutely_secret/"
+    allow_roles: ["admin"]

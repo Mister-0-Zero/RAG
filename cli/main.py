@@ -21,6 +21,8 @@ from support_function.detect_function import detect_language, detect_category
 from rag.llm import init_llm_client
 from rag.answer import AnswerGenerator, AnswerResult
 from rag.query_decomposer import QueryDecomposer
+from rag.users import USER_ROLES
+from rag.acl_runtime import ACLRuntimeFilter
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +45,7 @@ def setup_pipeline(reindex: bool, cfg: RAGConfig) -> SimpleNamespace:
     llm_client = init_llm_client(cfg)
     decomposer = QueryDecomposer(llm_client, cfg)
     answer_generator = AnswerGenerator(llm_client, cfg)
+    acl_filter = ACLRuntimeFilter(cfg)
 
     log.info("Building hybrid retriever...", extra={'log_type': 'INFO'})
     retriever = build_hybrid_retriever(cfg=cfg, chunk_size=600, overlap=150, reindex=reindex)
@@ -59,6 +62,7 @@ def setup_pipeline(reindex: bool, cfg: RAGConfig) -> SimpleNamespace:
         decomposer=decomposer,
         cfg=cfg,
         neighbors=3,
+        acl_filter=acl_filter
     )
 
 def process_query(query: str, pipeline: SimpleNamespace) -> None:
@@ -70,6 +74,10 @@ def process_query(query: str, pipeline: SimpleNamespace) -> None:
         query: The user's input query.
         pipeline: The namespace object with all pipeline components.
     """
+
+    current_user = "admin"
+    user_role = USER_ROLES[current_user]
+
     language = detect_language(query)
     category = detect_category(query)
     log.info(f"Language: {language}, Category: {category}", extra={'log_type': 'METADATA'})
@@ -89,9 +97,17 @@ def process_query(query: str, pipeline: SimpleNamespace) -> None:
 
     # 2. Reranking
     reranked_results = pipeline.reranker.rerank(query, results, top_k=3)
+    reranked_results = pipeline.acl_filter.filter(reranked_results, user_role=user_role)
     if not reranked_results:
-        log.warning("All documents were filtered out by the reranker.", extra={'log_type': 'WARNING'})
-        log.info(pipeline.cfg.no_data_response, extra={'log_type': 'MODEL_RESPONSE'})
+        log.warning(
+            "All data was not found or was filtered out, with the role=%s",
+            user_role,
+            extra={'log_type': 'WARNING'}
+        )
+        log.info(
+            pipeline.cfg.no_data_response,
+            extra={'log_type': 'MODEL_RESPONSE'}
+        )
         return
 
     # 3. Context Expansion and Compression

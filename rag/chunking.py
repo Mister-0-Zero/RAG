@@ -22,6 +22,7 @@ class Chunk(BaseModel):
     doc_name: str
     language: str | None = None
     category: str | None = None
+    allowed_roles: str | None = None
 
 
 def chunk_document(
@@ -60,6 +61,7 @@ def chunk_document(
             end_char=end,
             language=language,
             category=doc.category,
+            allowed_roles=doc.allowed_roles,
         )
         chunks.append(chunk)
 
@@ -81,6 +83,13 @@ def chunk_documents(
     log.info(f"Starting chunking for {len(docs)} documents...", extra={'log_type': 'INFO'})
     all_chunks: list[Chunk] = []
     for doc in docs:
-        all_chunks.extend(chunk_document(doc=doc, chunk_size=chunk_size, overlap=overlap))
+        chunks = chunk_document(doc=doc, chunk_size=chunk_size, overlap=overlap)
+        log.debug(
+            "Chunked document %s into %d chunks. First chunk roles: %s",
+            doc.source,
+            len(chunks),
+            chunks[0].allowed_roles if chunks else "N/A",
+        )
+        all_chunks.extend(chunks)
     log.info(f"Finished chunking. Created {len(all_chunks)} chunks.", extra={'log_type': 'INFO'})
     return all_chunks

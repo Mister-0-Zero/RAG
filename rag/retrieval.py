@@ -83,6 +83,7 @@ class DenseRetriever:
                 category=meta.get("category"),
                 start_char=meta.get("start_char"),
                 end_char=meta.get("end_char"),
+                allowed_roles=meta.get("allowed_roles"),
             )
 
             idx = chunk.order

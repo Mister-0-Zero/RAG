@@ -39,11 +39,23 @@ class VectorStore:
         """Adds a batch of chunks and their embeddings to the collection."""
         if len(chunks) != len(embeddings):
             raise ValueError("Количество чанков не равно количеству эмбеддингов!")
-        
+
         log.info(f"Indexing {len(chunks)} chunks into ChromaDB...", extra={'log_type': 'INFO'})
         ids = [chunk.id for chunk in chunks]
         documents = [chunk.text for chunk in chunks]
-        metadatas = [{"doc_id": c.doc_id, "doc_name": c.doc_name, "order": c.order, "language": c.language, "category": c.category, "start_char": c.start_char, "end_char": c.end_char} for c in chunks]
+        metadatas = [
+            {
+                "doc_id": c.doc_id,
+                "doc_name": c.doc_name,
+                "order": c.order,
+                "language": c.language,
+                "category": c.category,
+                "start_char": c.start_char,
+                "end_char": c.end_char,
+                "allowed_roles": c.allowed_roles,
+            }
+            for c in chunks
+        ]
 
         self._collection.add(
             ids=ids,
@@ -106,7 +118,7 @@ class VectorStore:
                 })
 
         category = where.get("category")
-        if category:
+        if category and category != "general":
             filters.append({"category": category})
 
         if filters:
@@ -135,6 +147,7 @@ class VectorStore:
                     "distance": distances[i],
                 }
             )
+        log.debug("ChromaDB query returned %d hits.", len(hits))
         return hits
 
     def search_by_metadata(
