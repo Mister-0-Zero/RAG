@@ -14,8 +14,8 @@ def authenticate_user(
     acl_enabled: bool,
 ) -> tuple[str, str]:
     """
-    Возвращает (username, role).
-    Завершает программу при ошибке авторизации.
+    Returns (username, role).
+    Exits the program on authorization failure.
     """
 
     if not acl_enabled:
@@ -30,7 +30,7 @@ def authenticate_user(
     expected_password = USERS[username]["password"]
     role = USERS[username]["role"]
 
-    # Если пароль пустой — проверка не нужна (guest)
+    # If the password is empty, no check is needed (e.g., for a guest user)
     if expected_password == "":
         return username, role
 
@@ -41,7 +41,8 @@ def authenticate_user(
             return username, role
 
         log.warning("Invalid password (attempt %d/3)", attempt)
-        password_arg = None  # чтобы дальше спрашивало через getpass
+        # so that it prompts for password again using getpass
+        password_arg = None
 
     log.error("Authentication failed. Exiting.")
     sys.exit(1)

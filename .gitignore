@@ -5,4 +5,4 @@ data
 **/__init__.py
 app.log
 .env
-GEMINI.md
+./GEMINI.md

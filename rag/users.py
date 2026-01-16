@@ -1,4 +1,4 @@
-# rag/users.py
+"""This module defines the user data for authentication and ACL."""
 
 USERS = {
     "guest": {

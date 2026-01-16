@@ -80,7 +80,6 @@ def process_query(query: str, pipeline: SimpleNamespace, user_role: str) -> None
     category = detect_category(query)
     log.info(f"Language: {language}, Category: {category}", extra={'log_type': 'METADATA'})
 
-    # 1. Retrieval
     subqueries = pipeline.decomposer.decompose(query)
 
     results = []
@@ -93,7 +92,6 @@ def process_query(query: str, pipeline: SimpleNamespace, user_role: str) -> None
         log.info(pipeline.cfg.no_data_response, extra={'log_type': 'MODEL_RESPONSE'})
         return
 
-    # 2. Reranking
     reranked_results = pipeline.reranker.rerank(query, results, top_k=3)
     reranked_results = pipeline.acl_filter.filter(reranked_results, user_role=user_role)
     if not reranked_results:
@@ -108,9 +106,8 @@ def process_query(query: str, pipeline: SimpleNamespace, user_role: str) -> None
         )
         return
 
-    # 3. Context Expansion and Compression
     final_context_for_llm = []
-    initial_contexts_for_logging = {}  # Store initial context for logging
+    initial_contexts_for_logging = {}
 
     for r in reranked_results:
         context_chunks = pipeline.retriever._dense._store.get_neighbors(
@@ -123,10 +120,8 @@ def process_query(query: str, pipeline: SimpleNamespace, user_role: str) -> None
         compressed_context = pipeline.compressor.compress(question=query, chunks=context_chunks)
         final_context_for_llm.append({**r, "compressed_context": compressed_context})
 
-    # 4. Answering
     answer_result = pipeline.answer_generator.generate(query=query, final=final_context_for_llm)
 
-    # 5. Log the final result
     log_final_result(answer_result, initial_contexts_for_logging, pipeline.cfg)
 
 
@@ -143,7 +138,6 @@ def log_final_result(
         log.info(answer_result.answer, extra={'log_type': 'MODEL_RESPONSE'})
         return
 
-    # --- Extended Logging Output ---
     log.info("=" * 20 + " FINAL ANSWER " + "=" * 20, extra={'log_type': 'MODEL_RESPONSE'})
     log.info(answer_result.answer, extra={'log_type': 'MODEL_RESPONSE'})
 
