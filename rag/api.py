@@ -4,6 +4,7 @@ Public API for building and running the RAG pipeline as a module.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional, Any
 
@@ -13,7 +14,8 @@ from rag.pipeline import build_hybrid_retriever
 from rag.rerank import Reranker
 from search.es_client import get_es, check_es_or_die
 from support_function.detect_function import detect_language, detect_category
-from rag.llm import init_llm_client
+from rag.llm import init_llm_client, init_query_llm_client
+from rag.query_enhancer import QueryEnhancer
 from rag.answer import AnswerGenerator, AnswerResult
 from rag.query_decomposer import QueryDecomposer
 from rag.acl_runtime import ACLRuntimeFilter
@@ -36,6 +38,7 @@ class RAGPipeline:
     cfg: RAGConfig
     neighbors: int
     acl_filter: ACLRuntimeFilter
+    query_enhancer: QueryEnhancer | None
 
     def query(
         self,
@@ -67,6 +70,11 @@ def build_pipeline(
     answer_generator = AnswerGenerator(llm_client, cfg)
     acl_filter = ACLRuntimeFilter(cfg)
 
+    query_enhancer = None
+    if cfg.query_variations_count > 0 or cfg.query_use_hypothetical_answer:
+        query_llm_client = init_query_llm_client(cfg)
+        query_enhancer = QueryEnhancer(query_llm_client, cfg)
+
     log.info("Building hybrid retriever...", extra={"log_type": "INFO"})
     retriever = build_hybrid_retriever(cfg=cfg, chunk_size=chunk_size, overlap=overlap, reindex=reindex)
     log.info("Retriever is ready.", extra={"log_type": "INFO"})
@@ -83,6 +91,7 @@ def build_pipeline(
         cfg=cfg,
         neighbors=neighbors,
         acl_filter=acl_filter,
+        query_enhancer=query_enhancer,
     )
 
 
@@ -100,13 +109,60 @@ def process_query(
     category = detect_category(query)
     log.info("Language: %s, Category: %s", language, category, extra={"log_type": "METADATA"})
 
-    subqueries = pipeline.decomposer.decompose(query)
+    enhance_start = time.perf_counter()
+    if pipeline.query_enhancer:
+        variations, hypo = pipeline.query_enhancer.enhance(query)
+    else:
+        variations, hypo = [], None
+    enhance_s = time.perf_counter() - enhance_start
+
+    if pipeline.cfg.log_mode & 2:
+        log.info("Query enhancement time: %.2fs", enhance_s, extra={"log_type": "INFO"})
+
+    if (pipeline.cfg.log_mode & 1) and (variations or hypo):
+        log.info(
+            "Query enhancements: variations=%d, hypothetical=%s",
+            len(variations),
+            "yes" if hypo else "no",
+            extra={"log_type": "ENHANCEMENT"},
+        )
+        for i, v in enumerate(variations, start=1):
+            log.info("Variation %d: %s", i, v, extra={"log_type": "ENHANCEMENT"})
+        if hypo:
+            log.info("Hypothetical answer: %s", hypo, extra={"log_type": "ENHANCEMENT"})
+
+    enhancement_mode = (pipeline.cfg.query_enhancement_mode or "single").lower()
+    if enhancement_mode not in {"single", "multi"}:
+        log.warning(
+            "Unknown query_enhancement_mode='%s', fallback to 'single'.",
+            pipeline.cfg.query_enhancement_mode,
+            extra={"log_type": "WARNING"},
+        )
+        enhancement_mode = "single"
+
+    if enhancement_mode == "single" and (variations or hypo):
+        combined_query = _build_combined_query(query, variations, hypo)
+        subqueries = [combined_query]
+    else:
+        base_queries = pipeline.decomposer.decompose(query)
+        extra_queries = []
+        if variations:
+            extra_queries.extend(variations)
+        if hypo:
+            extra_queries.append(hypo)
+
+        subqueries = _dedupe_queries(base_queries + extra_queries)
 
     results = []
+    retrieve_start = time.perf_counter()
     for sq in subqueries:
         results.extend(
             pipeline.retriever.retrieve(sq, language=language, category=category)
         )
+    retrieve_s = time.perf_counter() - retrieve_start
+
+    if pipeline.cfg.log_mode & 2:
+        log.info("Retrieval time: %.2fs", retrieve_s, extra={"log_type": "INFO"})
 
     if not results:
         log.warning("No documents found by retriever.", extra={"log_type": "WARNING"})
@@ -115,7 +171,12 @@ def process_query(
             return answer_result, QueryDebug(initial_contexts={})
         return answer_result
 
+    rerank_start = time.perf_counter()
     reranked_results = pipeline.reranker.rerank(query, results, top_k=3)
+    rerank_s = time.perf_counter() - rerank_start
+
+    if pipeline.cfg.log_mode & 2:
+        log.info("Rerank time: %.2fs", rerank_s, extra={"log_type": "INFO"})
     reranked_results = pipeline.acl_filter.filter(reranked_results, user_role=user_role)
     if not reranked_results:
         log.warning(
@@ -131,22 +192,65 @@ def process_query(
     final_context_for_llm = []
     initial_contexts_for_logging = {}
 
+    compress_start = time.perf_counter()
     for r in reranked_results:
         context_chunks = pipeline.retriever._dense._store.get_neighbors(
             r["main_chunk"], neighbors_forward=pipeline.neighbors
         )
 
-        if pipeline.cfg.extended_logs:
-            initial_contexts_for_logging[r["main_chunk"].id] = " ".join([c.text for c in context_chunks])
+        if pipeline.cfg.log_mode & 4:
+            context_text = " ".join([c.text for c in context_chunks])
+            initial_contexts_for_logging[r["main_chunk"].id] = context_text
+            log.info(
+                "Context for compression (%s): %s",
+                r["main_chunk"].doc_name,
+                context_text,
+                extra={"log_type": "CONTEXT_AFTER_RERANK"},
+            )
 
         compressed_context = pipeline.compressor.compress(question=query, chunks=context_chunks)
         final_context_for_llm.append({**r, "compressed_context": compressed_context})
+    compress_s = time.perf_counter() - compress_start
+
+    if pipeline.cfg.log_mode & 2:
+        log.info("Compression time: %.2fs", compress_s, extra={"log_type": "INFO"})
 
     answer_result = pipeline.answer_generator.generate(query=query, final=final_context_for_llm)
 
     if return_debug:
         return answer_result, QueryDebug(initial_contexts=initial_contexts_for_logging)
     return answer_result
+
+
+def _dedupe_queries(queries: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for q in queries:
+        if not isinstance(q, str):
+            continue
+        text = q.strip()
+        if len(text) < 3:
+            continue
+        if text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _build_combined_query(query: str, variations: list[str], hypo: str | None) -> str:
+    parts = ["ORIGINAL QUERY:", query]
+
+    if variations:
+        parts.append("QUERY VARIATIONS:")
+        for i, v in enumerate(variations, start=1):
+            parts.append(f"VARIATION {i}: {v}")
+
+    if hypo:
+        parts.append("HYPOTHETICAL ANSWER:")
+        parts.append(hypo)
+
+    return "\n".join(parts)
 
 
 def log_final_result(
@@ -158,43 +262,7 @@ def log_final_result(
     Logs the final answer from the LLM. If extended_logs is enabled in the
     configuration, it also logs detailed context, scores, and the prompt.
     """
-    if not cfg.extended_logs:
-        log.info(answer_result.answer, extra={"log_type": "MODEL_RESPONSE"})
-        return
-
-    log.info("=" * 20 + " FINAL ANSWER " + "=" * 20, extra={"log_type": "MODEL_RESPONSE"})
     log.info(answer_result.answer, extra={"log_type": "MODEL_RESPONSE"})
 
-    if answer_result.citations:
-        log.info("Sources: %s", ", ".join(answer_result.citations), extra={"log_type": "METADATA"})
-
-    log.info("--- EXTENDED LOGS ---", extra={"log_type": "INFO"})
-
-    if answer_result.prompt:
-        log.info("LLM Prompt:\n%s", answer_result.prompt, extra={"log_type": "DEBUG"})
-
-    if answer_result.final_context:
-        for item in answer_result.final_context:
-            main_chunk = item.get("main_chunk")
-            if not main_chunk:
-                continue
-
-            log.info("-" * 15, extra={"log_type": "DEBUG"})
-            score = item.get("score", 0.0)
-            rerank_score = item.get("rerank_score", 0.0)
-            doc_name = main_chunk.doc_name
-            log.info(
-                "Source: %s (Score: %.4f, Rerank Score: %.4f)",
-                doc_name,
-                score,
-                rerank_score,
-                extra={"log_type": "DEBUG"},
-            )
-
-            initial_context = initial_contexts.get(main_chunk.id)
-            if initial_context:
-                log.info("Initial Context: %s", initial_context, extra={"log_type": "DEBUG"})
-
-            compressed_context = item.get("compressed_context", "")
-            log.info("Compressed Context: %s", compressed_context, extra={"log_type": "DEBUG"})
-    log.info("=" * 56, extra={"log_type": "INFO"})
+    if answer_result.citations and (cfg.log_mode & 2):
+        log.info("Sources: %s", ", ".join(answer_result.citations), extra={"log_type": "INFO"})

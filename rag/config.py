@@ -27,7 +27,7 @@ class RAGConfig(BaseModel):
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     """The name of the cross-encoder model used for reranking search results."""
 
-    model_name_for_compressor: str = "qwen2.5:3b-instruct"
+    model_name_for_compressor: str = "qwen2.5:7b-instruct"
     """The name of the large language model used for context compression."""
 
     max_tokens_after_compressed_per_result_: int = 256
@@ -49,12 +49,12 @@ class RAGConfig(BaseModel):
     """The name of the model to use via the API."""
     api_temperature: float = 0.5
     """The temperature for the API model, controlling creativity."""
-    api_timeout_s: int = 5
+    api_timeout_s: int = 10
     """The timeout in seconds for API requests."""
     api_max_tokens: int = 2048
     """The maximum number of tokens for the API model to generate."""
 
-    local_model_name: str = "deepseek-r1:32b"
+    local_model_name: str = "qwen2.5:7b-instruct"
     """The name of the local model to use via Ollama."""
     local_temperature: float = 0.5
     """The temperature for the local model."""
@@ -72,6 +72,26 @@ class RAGConfig(BaseModel):
 
     min_words_for_decomposition: int = 5
     """The minimum number of words in a query to trigger decomposition."""
+
+    log_mode: int = 3
+    """Logging mode bitmask. Always logs user prompt and model answer."""
+
+    query_variations_count: int = 3
+    """Number of query variations to generate for retrieval."""
+    query_use_hypothetical_answer: bool = True
+    """Whether to generate a hypothetical answer and use it as a retrieval query."""
+    query_enhancement_mode: str = "single"
+    """Query enhancement mode: 'single' or 'multi'."""
+    query_enhancer_use_local: bool = True
+    """Whether to use a local model for query enhancement."""
+    query_enhancer_model_name: str | None = None
+    """Optional model name for query enhancement (defaults to local model)."""
+    query_enhancer_temperature: float = 0.5
+    """Temperature for query enhancement generation."""
+    query_enhancer_max_tokens: int = 256
+    """Max tokens for query enhancement generation."""
+    query_enhancer_timeout_s: int = 30
+    """Timeout in seconds for query enhancement requests."""
 
     acl: bool = False
     """Whether to use Access Control Lists (ACL) for allowing to documents."""

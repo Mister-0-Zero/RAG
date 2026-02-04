@@ -49,14 +49,22 @@ class GroqLLMClient(LLMClient):
     This client handles the specifics of forming requests, including authentication and payload structure,
     and processes the response to extract the generated text.
     """
-    def __init__(self, cfg: RAGConfig):
+    def __init__(
+        self,
+        cfg: RAGConfig,
+        model_name: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        timeout_s: int | None = None,
+        base_url: str | None = None,
+    ):
         """Initializes the GroqLLMClient with the given configuration."""
         self.api_key = _get_env_api_key()
-        self.base_url = getattr(cfg, "api_base_url", "https://api.groq.com/openai/v1")
-        self.model_name = cfg.api_model_name
-        self.temperature = getattr(cfg, "api_temperature")
-        self.max_tokens = getattr(cfg, "api_max_tokens")
-        self.timeout_s = getattr(cfg, "api_timeout_s")
+        self.base_url = base_url or getattr(cfg, "api_base_url", "https://api.groq.com/openai/v1")
+        self.model_name = model_name or cfg.api_model_name
+        self.temperature = temperature if temperature is not None else getattr(cfg, "api_temperature")
+        self.max_tokens = max_tokens if max_tokens is not None else getattr(cfg, "api_max_tokens")
+        self.timeout_s = timeout_s if timeout_s is not None else getattr(cfg, "api_timeout_s")
 
         log.info(
             "Groq LLM init: base_url=%s model=%s temp=%s max_tokens=%s timeout=%ss",
@@ -108,13 +116,21 @@ class OllamaLLMClient(LLMClient):
     This client is responsible for sending requests to the local Ollama server
     and parsing the response to get the generated text.
     """
-    def __init__(self, cfg: RAGConfig):
+    def __init__(
+        self,
+        cfg: RAGConfig,
+        model_name: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        timeout_s: float | None = None,
+        base_url: str | None = None,
+    ):
         """Initializes the OllamaLLMClient with the given configuration."""
-        self.base_url = cfg.ollama_url
-        self.model_name = cfg.local_model_name
-        self.temperature = getattr(cfg, "local_temperature", 0.3)
-        self.max_tokens = getattr(cfg, "local_max_tokens", 800)
-        self.timeout_s = getattr(cfg, "local_timeout_s", 120)
+        self.base_url = base_url or cfg.ollama_url
+        self.model_name = model_name or cfg.local_model_name
+        self.temperature = temperature if temperature is not None else getattr(cfg, "local_temperature", 0.3)
+        self.max_tokens = max_tokens if max_tokens is not None else getattr(cfg, "local_max_tokens", 800)
+        self.timeout_s = timeout_s if timeout_s is not None else getattr(cfg, "local_timeout_s", 120)
 
         log.info(
             "Ollama LLM init: url=%s model=%s", self.base_url, self.model_name,
@@ -169,3 +185,30 @@ def init_llm_client(cfg: RAGConfig) -> LLMClient:
     if mode == "local":
         return OllamaLLMClient(cfg)
     raise ValueError(f"local_or_API_model must be 'API' or 'local', got: {mode}")
+
+
+def init_query_llm_client(cfg: RAGConfig) -> LLMClient:
+    """
+    Initializes and returns the LLM client used for query enhancement.
+    """
+    model_name = cfg.query_enhancer_model_name or cfg.local_model_name
+    temperature = cfg.query_enhancer_temperature
+    max_tokens = cfg.query_enhancer_max_tokens
+    timeout_s = cfg.query_enhancer_timeout_s
+
+    if cfg.query_enhancer_use_local:
+        return OllamaLLMClient(
+            cfg,
+            model_name=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+
+    return GroqLLMClient(
+        cfg,
+        model_name=model_name,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout_s=timeout_s,
+    )

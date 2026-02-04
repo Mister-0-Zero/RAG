@@ -20,7 +20,7 @@ def run_cli(reindex: bool, cfg: RAGConfig, user_role: str) -> None:
     """
     The main execution loop for the command-line interface.
     """
-    setup_logging()
+    setup_logging(cfg)
     pipeline = build_pipeline(reindex=reindex, cfg=cfg)
 
     log.info("Enter your question (or 'exit' to quit):", extra={"log_type": "INFO"})
