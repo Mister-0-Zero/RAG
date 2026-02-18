@@ -60,17 +60,30 @@ class VectorStore:
         self._collection.add(
             ids=ids,
             documents=documents,
-            embeddings=embeddings,
-            metadatas=metadatas,
+            embeddings=embeddings,  # type: ignore[arg-type]
+            metadatas=metadatas,  # type: ignore[arg-type]
         )
 
     def get_neighbors(self, chunk: Chunk, neighbors_forward: int = 3) -> list[Chunk]:
-        """Retrieves neighboring chunks for a given chunk based on document ID and order."""
+        """Retrieves neighboring chunks after the main chunk (forward window)."""
+        return self.get_neighbors_window(
+            chunk,
+            neighbors_backward=1,
+            neighbors_forward=neighbors_forward,
+        )
+
+    def get_neighbors_window(
+        self,
+        chunk: Chunk,
+        neighbors_backward: int = 0,
+        neighbors_forward: int = 3,
+    ) -> list[Chunk]:
+        """Retrieves neighboring chunks in both directions around the main chunk."""
         hits = self.search_by_metadata(
-            where = {
+            where={
                 "$and": [
                     {"doc_id": chunk.doc_id},
-                    {"order": {"$gte": chunk.order - 1}},
+                    {"order": {"$gte": chunk.order - neighbors_backward}},
                     {"order": {"$lte": chunk.order + neighbors_forward}},
                 ]
             }
@@ -86,10 +99,11 @@ class VectorStore:
                     doc_name=meta["doc_name"],
                     text=h["document"],
                     order=meta["order"],
+                    start_char=meta.get("start_char", 0),
+                    end_char=meta.get("end_char", 0),
                     language=meta.get("language"),
                     category=meta.get("category"),
-                    start_char=meta.get("start_char"),
-                    end_char=meta.get("end_char"),
+                    allowed_roles=meta.get("allowed_roles"),
                 )
             )
 
@@ -131,11 +145,13 @@ class VectorStore:
         result = self._collection.query(
             **kwargs
         )
+        if result is None:
+            return []
 
-        ids = result.get("ids", [[]])[0]
-        documents = result.get("documents", [[]])[0]
-        metadatas = result.get("metadatas", [[]])[0]
-        distances = result.get("distances", [[]])[0]
+        ids = (result.get("ids") or [[]])[0]
+        documents = (result.get("documents") or [[]])[0]
+        metadatas = (result.get("metadatas") or [[]])[0]
+        distances = (result.get("distances") or [[]])[0]
 
         hits: list[dict[str, Any]] = []
         for i in range(len(ids)):
@@ -158,10 +174,12 @@ class VectorStore:
         result = self._collection.get(
             where=where,
         )
+        if result is None:
+            return []
 
-        ids = result.get("ids", [])
-        documents = result.get("documents", [])
-        metadatas = result.get("metadatas", [])
+        ids = result.get("ids") or []
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
 
         hits = []
         for i in range(len(ids)):

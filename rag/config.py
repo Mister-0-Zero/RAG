@@ -89,11 +89,14 @@ class RAGConfig(BaseModel):
     """The default response when no relevant information is found."""
     enable_citations: bool = False
     """Whether to include citations in the answer."""
-    extended_logs: bool = False
-    """Whether to include the prompt, initial context, and score in the model's response."""
 
     min_words_for_decomposition: int = 5
     """The minimum number of words in a query to trigger decomposition."""
+
+    neighbors_forward: int = 0
+    """Number of neighbor chunks to include after the main chunk."""
+    neighbors_backward: int = 0
+    """Number of neighbor chunks to include before the main chunk."""
 
     chunking_mode: str = "delimiter"
     """Chunking mode: 'delimiter' or 'size'."""

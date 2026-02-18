@@ -36,7 +36,6 @@ class RAGPipeline:
     answer_generator: AnswerGenerator
     decomposer: QueryDecomposer
     cfg: RAGConfig
-    neighbors: int
     acl_filter: ACLRuntimeFilter
     query_enhancer: QueryEnhancer | None
 
@@ -54,7 +53,6 @@ def build_pipeline(
     cfg: Optional[RAGConfig] = None,
     chunk_size: int = 600,
     overlap: int = 150,
-    neighbors: int = 3,
 ) -> RAGPipeline:
     """
     Initializes and wires together the components of the RAG pipeline.
@@ -89,7 +87,6 @@ def build_pipeline(
         answer_generator=answer_generator,
         decomposer=decomposer,
         cfg=cfg,
-        neighbors=neighbors,
         acl_filter=acl_filter,
         query_enhancer=query_enhancer,
     )
@@ -195,8 +192,12 @@ def process_query(
 
     compress_start = time.perf_counter()
     for r in reranked_results:
-        context_chunks = pipeline.retriever._dense._store.get_neighbors(
-            r["main_chunk"], neighbors_forward=pipeline.neighbors
+        neighbors_forward = max(0, int(pipeline.cfg.neighbors_forward))
+        neighbors_backward = max(0, int(pipeline.cfg.neighbors_backward))
+        context_chunks = pipeline.retriever._dense._store.get_neighbors_window(
+            r["main_chunk"],
+            neighbors_backward=neighbors_backward,
+            neighbors_forward=neighbors_forward,
         )
 
         if pipeline.cfg.log_mode & 4:
@@ -277,10 +278,7 @@ def log_final_result(
     initial_contexts: dict[str, str],
     cfg: RAGConfig,
 ) -> None:
-    """
-    Logs the final answer from the LLM. If extended_logs is enabled in the
-    configuration, it also logs detailed context, scores, and the prompt.
-    """
+    """Logs the final answer from the LLM."""
     log.info(answer_result.answer, extra={"log_type": "MODEL_RESPONSE"})
 
     if answer_result.citations and (cfg.log_mode & 2):

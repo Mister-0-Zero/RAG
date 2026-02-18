@@ -79,8 +79,7 @@ class AnswerGenerator:
             )
 
         prompt = self._build_prompt(query=query, context_text=context_text, lang=lang)
-        if self.cfg.extended_logs:
-            log.info("Prompt: \n%s", prompt, extra={'log_type': 'INFO'})
+        log.debug("Prompt: \n%s", prompt, extra={'log_type': 'INFO'})
 
         log.info(
             "Calling LLM for answer. Context chars: %d, Items: %d",
