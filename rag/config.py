@@ -30,8 +30,30 @@ class RAGConfig(BaseModel):
     model_name_for_compressor: str = "qwen2.5:7b-instruct"
     """The name of the large language model used for context compression."""
 
-    max_tokens_after_compressed_per_result_: int = 256
+    max_tokens_after_compressed_per_result_: int = 800
     """The maximum number of tokens to keep for each result after compression."""
+
+    compressor_prompt: str = (
+        "Ты — система очистки контекста для Retrieval-Augmented Generation.\n"
+        "Вопрос пользователя:\n"
+        "{question}\n\n"
+        "Ниже приведены фрагменты текста из базы знаний.\n"
+        "Твоя задача — вернуть ОДИН связный, осмысленный кусок текста, который относится\n"
+        "исключительно к вопросу. Удали повторы и нерелевантное, но сохрани связность.\n"
+        "Пиши естественно, одним блоком текста, без списков.\n\n"
+        "Правила:\n"
+        "- Возвращай один цельный абзац\n"
+        "- Удали явные повторы и технический мусор\n"
+        "- Удали любые части, которые не относятся к вопросу, даже если они выглядят связными\n"
+        "- Сохрани ключевые факты и определения, относящиеся к вопросу\n"
+        "- Не добавляй новых сведений и не делай выводов\n\n"
+        "Фрагменты:\n"
+        "{fragments_text}\n\n"
+        "Формат ответа:\n"
+        "<один связный абзац>\n\n"
+        "Ответ:\n"
+    )
+    """Prompt for context cleaning/compression."""
 
     temperature_model_compressor: float = 0.0
     """The temperature setting for the compressor model to control randomness."""
@@ -73,7 +95,16 @@ class RAGConfig(BaseModel):
     min_words_for_decomposition: int = 5
     """The minimum number of words in a query to trigger decomposition."""
 
-    log_mode: int = 3
+    chunking_mode: str = "delimiter"
+    """Chunking mode: 'delimiter' or 'size'."""
+    chunk_delimiters: list[str] = ["SECTION:"]
+    """List of delimiters for delimiter-based chunking."""
+    chunk_delimiters_are_regex: bool = False
+    """Whether chunk delimiters are regex patterns."""
+    chunk_delimiter_included: bool = False
+    """Whether to include delimiter text in chunks."""
+
+    log_mode: int = 7
     """Logging mode bitmask. Always logs user prompt and model answer."""
 
     query_variations_count: int = 3

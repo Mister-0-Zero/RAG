@@ -38,6 +38,7 @@ def build_hybrid_retriever(
             documents,
             chunk_size=chunk_size,
             overlap=overlap,
+            cfg=cfg,
         )
 
         dense._store.clear_index()

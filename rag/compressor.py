@@ -19,6 +19,7 @@ class ContextCompressor:
         self.ollama_url = cfg.ollama_url
         self.max_new_tokens = cfg.max_tokens_after_compressed_per_result_ * neighbors
         self.temperature = cfg.temperature_model_compressor
+        self.prompt_template = cfg.compressor_prompt
 
         log.info(
             "Context compressor initialized (ollama model=%s)",
@@ -53,6 +54,9 @@ class ContextCompressor:
         resp.raise_for_status()
 
         text = resp.json().get("response", "").strip()
+        if not text:
+            log.warning("Compressor returned empty response; falling back to full context.")
+            text = "\n\n".join([c.text for c in chunks]).strip()
 
         log.debug(
             "Context after compression:\n%s",
@@ -69,29 +73,7 @@ class ContextCompressor:
 
         fragments_text = "\n\n".join(fragments)
 
-        return f"""Ты — система сжатия контекста для Retrieval-Augmented Generation.
-Вопрос пользователя:
-{question}
-
-Ниже приведен фрагмент текста из базы знаний.
-Твоя задача — оставить ТОЛЬКО информацию, необходимую для ответа на вопрос.
-
-Правила:
-- Удали явные повторы и технический мусор
-- Сохрани связный текст, который помогает понять тему вопроса
-- Сохрани определения, пояснения и важные описания, даже если они не отвечают на вопрос напрямую
-- Не сокращай фразы до телеграфного стиля — текст должен оставаться читаемым
-- НИЧЕГО не добавляй от себя и не делай выводов
-- Не отвечай на вопрос, только подготавливай контекст
-- Если фрагмент частично полезен — сохрани полезную часть
-- Если фрагмент не относится к теме совсем — можешь его опустить
-
-
-Фрагмент:
-{fragments_text}
-
-Формат ответа:
-<сжатый контекст>
-
-Сжатый контекст:
-"""
+        return self.prompt_template.format(
+            question=question,
+            fragments_text=fragments_text,
+        )

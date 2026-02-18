@@ -16,7 +16,7 @@ from rag.auth import authenticate_user
 log = logging.getLogger(__name__)
 
 
-def run_cli(reindex: bool, cfg: RAGConfig, user_role: str) -> None:
+def run_cli(reindex: bool, cfg: RAGConfig, user_role: str, answer_mode: bool) -> None:
     """
     The main execution loop for the command-line interface.
     """
@@ -38,7 +38,13 @@ def run_cli(reindex: bool, cfg: RAGConfig, user_role: str) -> None:
             log.info("Processing query: '%s'", query, extra={"log_type": "USER_QUERY"})
             answer_result, debug = cast(
                 tuple[AnswerResult, QueryDebug],
-                process_query(query, pipeline, user_role=user_role, return_debug=True),
+                process_query(
+                    query,
+                    pipeline,
+                    user_role=user_role,
+                    answer_mode=answer_mode,
+                    return_debug=True,
+                ),
             )
             log_final_result(answer_result, debug.initial_contexts, pipeline.cfg)
 
@@ -54,6 +60,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="A command-line interface for the RAG pipeline.")
     parser.add_argument("--user-role", type=str, help="User name")
     parser.add_argument("--password", type=str, help="User password")
+    parser.add_argument(
+        "--answer",
+        action="store_true",
+        help="If set, return model answer instead of context.",
+    )
     parser.add_argument(
         "--reindex",
         action="store_true",
@@ -77,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         extra={"log_type": "INFO"},
     )
 
-    run_cli(reindex=args.reindex, cfg=cfg, user_role=user_role)
+    run_cli(reindex=args.reindex, cfg=cfg, user_role=user_role, answer_mode=args.answer)
     return 0
 
 

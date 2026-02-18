@@ -99,6 +99,7 @@ def process_query(
     query: str,
     pipeline: RAGPipeline,
     user_role: str,
+    answer_mode: bool = True,
     return_debug: bool = False,
 ) -> AnswerResult | tuple[AnswerResult, QueryDebug]:
     """
@@ -172,7 +173,7 @@ def process_query(
         return answer_result
 
     rerank_start = time.perf_counter()
-    reranked_results = pipeline.reranker.rerank(query, results, top_k=3)
+    reranked_results = pipeline.reranker.rerank(query, results, top_k=2)
     rerank_s = time.perf_counter() - rerank_start
 
     if pipeline.cfg.log_mode & 2:
@@ -215,7 +216,16 @@ def process_query(
     if pipeline.cfg.log_mode & 2:
         log.info("Compression time: %.2fs", compress_s, extra={"log_type": "INFO"})
 
-    answer_result = pipeline.answer_generator.generate(query=query, final=final_context_for_llm)
+    if not answer_mode:
+        context_text = _build_context_text(final_context_for_llm)
+        answer_result = AnswerResult(
+            answer=context_text or pipeline.cfg.no_data_response,
+            citations=None,
+            prompt=None,
+            final_context=final_context_for_llm,
+        )
+    else:
+        answer_result = pipeline.answer_generator.generate(query=query, final=final_context_for_llm)
 
     if return_debug:
         return answer_result, QueryDebug(initial_contexts=initial_contexts_for_logging)
@@ -251,6 +261,15 @@ def _build_combined_query(query: str, variations: list[str], hypo: str | None) -
         parts.append(hypo)
 
     return "\n".join(parts)
+
+
+def _build_context_text(final: list[dict]) -> str:
+    parts = []
+    for item in final:
+        text = item.get("compressed_context", "")
+        if text and text.strip():
+            parts.append(text.strip())
+    return "\n\n".join(parts)
 
 
 def log_final_result(
