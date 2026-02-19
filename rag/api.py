@@ -191,9 +191,12 @@ def process_query(
                 seen_chunk_ids.add(c.id)
                 combined_chunks.append(c)
 
-        compress_start = time.perf_counter()
-        compressed_context = pipeline.compressor.compress(question=base_query, chunks=combined_chunks)
-        total_compress_s += time.perf_counter() - compress_start
+        if pipeline.cfg.use_compressor:
+            compress_start = time.perf_counter()
+            compressed_context = pipeline.compressor.compress(question=base_query, chunks=combined_chunks)
+            total_compress_s += time.perf_counter() - compress_start
+        else:
+            compressed_context = "\n\n".join([c.text for c in combined_chunks]).strip()
 
         item = {**reranked_results[0], "compressed_context": compressed_context}
         final_context_for_llm.append(item)
@@ -202,7 +205,8 @@ def process_query(
         log.info("Query enhancement time: %.2fs", total_enhance_s, extra={"log_type": "INFO"})
         log.info("Retrieval time: %.2fs", total_retrieve_s, extra={"log_type": "INFO"})
         log.info("Rerank time: %.2fs", total_rerank_s, extra={"log_type": "INFO"})
-        log.info("Compression time: %.2fs", total_compress_s, extra={"log_type": "INFO"})
+        if pipeline.cfg.use_compressor:
+            log.info("Compression time: %.2fs", total_compress_s, extra={"log_type": "INFO"})
 
     if not final_context_for_llm:
         log.warning("No documents found by retriever.", extra={"log_type": "WARNING"})

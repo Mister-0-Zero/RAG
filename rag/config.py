@@ -41,6 +41,9 @@ class RAGConfig(BaseModel):
     max_tokens_after_compressed_per_result_: int = 800
     """The maximum number of tokens to keep for each result after compression."""
 
+    use_compressor: bool = True
+    """Whether to run the compressor on retrieved context."""
+
     compressor_prompt: str = (
                 "Ты — система очистки контекста для Retrieval-Augmented Generation.\n"
         "Вопрос пользователя:\n"
