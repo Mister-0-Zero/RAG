@@ -4,11 +4,16 @@ It centralizes all key parameters, making them accessible and manageable from on
 """
 from __future__ import annotations
 from pydantic import BaseModel
+from typing import Any, Callable
 from pathlib import Path
 import torch
 import logging
 
 log = logging.getLogger(__name__)
+
+
+def default_vector_filter_builder(where: dict[str, Any]) -> dict[str, Any] | None:
+    return None
 
 class RAGConfig(BaseModel):
     """
@@ -27,6 +32,9 @@ class RAGConfig(BaseModel):
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     """The name of the cross-encoder model used for reranking search results."""
 
+    rerank_top_k: int = 3
+    """Number of candidates kept after reranking."""
+
     model_name_for_compressor: str = "qwen2.5:7b-instruct"
     """The name of the large language model used for context compression."""
 
@@ -34,19 +42,20 @@ class RAGConfig(BaseModel):
     """The maximum number of tokens to keep for each result after compression."""
 
     compressor_prompt: str = (
-        "Ты — система очистки контекста для Retrieval-Augmented Generation.\n"
+                "Ты — система очистки контекста для Retrieval-Augmented Generation.\n"
         "Вопрос пользователя:\n"
         "{question}\n\n"
         "Ниже приведены фрагменты текста из базы знаний.\n"
-        "Твоя задача — вернуть ОДИН связный, осмысленный кусок текста, который относится\n"
-        "исключительно к вопросу. Удали повторы и нерелевантное, но сохрани связность.\n"
-        "Пиши естественно, одним блоком текста, без списков.\n\n"
+        "Твоя задача — вернуть ОДИН связный, осмысленный кусок текста, который "
+        "отвечает на вопрос.\n"
+        "Не добавляй новые знания и не смешивай разные темы.\n"
+        "Пиши одним блоком текста, без списков.\n\n"
         "Правила:\n"
         "- Возвращай один цельный абзац\n"
         "- Удали явные повторы и технический мусор\n"
-        "- Удали любые части, которые не относятся к вопросу, даже если они выглядят связными\n"
-        "- Сохрани ключевые факты и определения, относящиеся к вопросу\n"
-        "- Не добавляй новых сведений и не делай выводов\n\n"
+        "- Не включай смежные темы, примеры и инструкции, если они не нужны для ответа\n"
+        "- Не добавляй новых сведений и не делай выводов\n"
+        "- Но не сокращай слишком сильно, все то что по теме должно содержаться в ответе\n\n"
         "Фрагменты:\n"
         "{fragments_text}\n\n"
         "Формат ответа:\n"
@@ -107,7 +116,15 @@ class RAGConfig(BaseModel):
     chunk_delimiter_included: bool = False
     """Whether to include delimiter text in chunks."""
 
-    log_mode: int = 7
+    vector_filter_builder: Callable[[dict[str, Any]], dict[str, Any] | None] = default_vector_filter_builder
+    """Hook to build vector search filters from query metadata."""
+
+    section_title_boost: float = 3.0
+    """Boost factor for section titles in lexical search."""
+    section_title_in_embeddings: bool = True
+    """Whether to include section titles in embedding texts."""
+
+    log_mode: int = 0
     """Logging mode bitmask. Always logs user prompt and model answer."""
 
     query_variations_count: int = 3
@@ -145,3 +162,6 @@ class RAGConfig(BaseModel):
         """
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         log.info(f"Compute device set to: {self.device.upper()}", extra={"log_type": "DEVICE"})
+
+    class Config:
+        arbitrary_types_allowed = True

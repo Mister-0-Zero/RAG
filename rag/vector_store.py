@@ -48,6 +48,7 @@ class VectorStore:
                 "doc_id": c.doc_id,
                 "doc_name": c.doc_name,
                 "order": c.order,
+                "section_title": c.section_title,
                 "language": c.language,
                 "category": c.category,
                 "start_char": c.start_char,
@@ -101,6 +102,7 @@ class VectorStore:
                     order=meta["order"],
                     start_char=meta.get("start_char", 0),
                     end_char=meta.get("end_char", 0),
+                    section_title=meta.get("section_title"),
                     language=meta.get("language"),
                     category=meta.get("category"),
                     allowed_roles=meta.get("allowed_roles"),
@@ -116,30 +118,11 @@ class VectorStore:
             "query_embeddings": [query_embedding],
             "n_results": n_results,
         }
-        filters = []
         where = where or {}
-
-        lang = where.get("language")
-        if lang:
-            if lang == "mixed":
-                filters.append({"language": {"$in": ["ru", "en", "mixed"]}})
-            else:
-                filters.append({
-                    "$or": [
-                        {"language": lang},
-                        {"language": "mixed"},
-                    ]
-                })
-
-        category = where.get("category")
-        if category and category != "general":
-            filters.append({"category": category})
-
-        if filters:
-            if len(filters) == 1:
-                kwargs["where"] = filters[0]
-            else:
-                kwargs["where"] = {"$and": filters}
+        if self._cfg.vector_filter_builder:
+            built = self._cfg.vector_filter_builder(where)
+            if built:
+                kwargs["where"] = built
 
         log.info(f"Querying ChromaDB with where clause: {kwargs.get('where')}", extra={'log_type': 'INFO'})
         result = self._collection.query(

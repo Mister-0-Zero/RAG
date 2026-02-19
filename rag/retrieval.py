@@ -38,7 +38,13 @@ class DenseRetriever:
         """Builds the vector index from a list of chunks."""
         log.info(f"Building vector store index with {len(chunks)} chunks...", extra={'log_type': 'INFO'})
 
-        texts = [c.text for c in chunks]
+        if self._cfg.section_title_in_embeddings:
+            texts = [
+                f"{c.section_title}\n{c.text}" if c.section_title else c.text
+                for c in chunks
+            ]
+        else:
+            texts = [c.text for c in chunks]
         embeddings = self._embedder.embed_texts(texts)
 
         self._store.index_chunks(chunks, embeddings)
@@ -67,18 +73,19 @@ class DenseRetriever:
         results: list[dict[str, Any]] = []
 
         for h in hits:
-            chunk_id = h.get("id")
+            chunk_id = str(h.get("id") or "")
             distance = h.get("distance")
 
             meta = h.get("metadata", {})
-            text = h.get("document")
+            text = str(h.get("document") or "")
 
             chunk = Chunk(
                 id=chunk_id,
-                doc_id=meta.get("doc_id"),
+                doc_id=meta.get("doc_id") or "",
                 doc_name=meta.get("doc_name", "unknown"),
                 text=text,
                 order=meta.get("order", 0),
+                section_title=meta.get("section_title"),
                 language=meta.get("language"),
                 category=meta.get("category"),
                 start_char=meta.get("start_char"),

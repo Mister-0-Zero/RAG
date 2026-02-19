@@ -31,7 +31,7 @@ class LogModeFilter(logging.Filter):
         if log_type == "ENHANCEMENT":
             return bool(_LOG_MODE & 1)
 
-        if log_type == "CONTEXT_AFTER_RERANK":
+        if log_type in {"CONTEXT_AFTER_RERANK", "CONTEXT_BEFORE", "CONTEXT_AFTER"}:
             return bool(_LOG_MODE & 4)
 
         if log_type in {"INFO", "METADATA", "DEVICE", "DEBUG"}:

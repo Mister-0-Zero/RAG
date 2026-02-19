@@ -107,28 +107,6 @@ def process_query(
     category = detect_category(query)
     log.info("Language: %s, Category: %s", language, category, extra={"log_type": "METADATA"})
 
-    enhance_start = time.perf_counter()
-    if pipeline.query_enhancer:
-        variations, hypo = pipeline.query_enhancer.enhance(query)
-    else:
-        variations, hypo = [], None
-    enhance_s = time.perf_counter() - enhance_start
-
-    if pipeline.cfg.log_mode & 2:
-        log.info("Query enhancement time: %.2fs", enhance_s, extra={"log_type": "INFO"})
-
-    if (pipeline.cfg.log_mode & 1) and (variations or hypo):
-        log.info(
-            "Query enhancements: variations=%d, hypothetical=%s",
-            len(variations),
-            "yes" if hypo else "no",
-            extra={"log_type": "ENHANCEMENT"},
-        )
-        for i, v in enumerate(variations, start=1):
-            log.info("Variation %d: %s", i, v, extra={"log_type": "ENHANCEMENT"})
-        if hypo:
-            log.info("Hypothetical answer: %s", hypo, extra={"log_type": "ENHANCEMENT"})
-
     enhancement_mode = (pipeline.cfg.query_enhancement_mode or "single").lower()
     if enhancement_mode not in {"single", "multi"}:
         log.warning(
@@ -138,84 +116,100 @@ def process_query(
         )
         enhancement_mode = "single"
 
-    if enhancement_mode == "single" and (variations or hypo):
-        combined_query = _build_combined_query(query, variations, hypo)
-        subqueries = [combined_query]
-    else:
-        base_queries = pipeline.decomposer.decompose(query)
-        extra_queries = []
-        if variations:
-            extra_queries.extend(variations)
-        if hypo:
-            extra_queries.append(hypo)
+    base_queries = pipeline.decomposer.decompose(query)
 
-        subqueries = _dedupe_queries(base_queries + extra_queries)
+    final_context_for_llm = []
+    initial_contexts_for_logging = {}
+    neighbors_forward = max(0, int(pipeline.cfg.neighbors_forward))
+    neighbors_backward = max(0, int(pipeline.cfg.neighbors_backward))
+    rerank_top_k = max(1, int(pipeline.cfg.rerank_top_k))
 
-    results = []
-    retrieve_start = time.perf_counter()
-    for sq in subqueries:
-        results.extend(
-            pipeline.retriever.retrieve(sq, language=language, category=category)
-        )
-    retrieve_s = time.perf_counter() - retrieve_start
+    total_retrieve_s = 0.0
+    total_rerank_s = 0.0
+    total_compress_s = 0.0
+    total_enhance_s = 0.0
+
+    for base_query in base_queries:
+        if pipeline.query_enhancer:
+            enhance_start = time.perf_counter()
+            v, h = pipeline.query_enhancer.enhance(base_query)
+            total_enhance_s += time.perf_counter() - enhance_start
+        else:
+            v, h = [], None
+
+        if (pipeline.cfg.log_mode & 1) and (v or h):
+            log.info(
+                "Query enhancements for subquery: variations=%d, hypothetical=%s",
+                len(v),
+                "yes" if h else "no",
+                extra={"log_type": "ENHANCEMENT"},
+            )
+            for i, item in enumerate(v, start=1):
+                log.info("Variation %d: %s", i, item, extra={"log_type": "ENHANCEMENT"})
+            if h:
+                log.info("Hypothetical answer: %s", h, extra={"log_type": "ENHANCEMENT"})
+
+        if enhancement_mode == "single" and (v or h):
+            query_set = [_build_combined_query(base_query, v, h)]
+        else:
+            extras = []
+            if v:
+                extras.extend(v)
+            if h:
+                extras.append(h)
+            query_set = _dedupe_queries([base_query] + extras)
+
+        results = []
+        retrieve_start = time.perf_counter()
+        for q in query_set:
+            results.extend(
+                pipeline.retriever.retrieve(q, language=language, category=category)
+            )
+        total_retrieve_s += time.perf_counter() - retrieve_start
+
+        if not results:
+            continue
+
+        rerank_start = time.perf_counter()
+        reranked_results = pipeline.reranker.rerank(base_query, results, top_k=rerank_top_k)
+        total_rerank_s += time.perf_counter() - rerank_start
+        reranked_results = pipeline.acl_filter.filter(reranked_results, user_role=user_role)
+        if not reranked_results:
+            continue
+
+        combined_chunks = []
+        seen_chunk_ids = set()
+        for r in reranked_results:
+            context_chunks = pipeline.retriever._dense._store.get_neighbors_window(
+                r["main_chunk"],
+                neighbors_backward=neighbors_backward,
+                neighbors_forward=neighbors_forward,
+            )
+            for c in context_chunks:
+                if c.id in seen_chunk_ids:
+                    continue
+                seen_chunk_ids.add(c.id)
+                combined_chunks.append(c)
+
+        compress_start = time.perf_counter()
+        compressed_context = pipeline.compressor.compress(question=base_query, chunks=combined_chunks)
+        total_compress_s += time.perf_counter() - compress_start
+
+        item = {**reranked_results[0], "compressed_context": compressed_context}
+        final_context_for_llm.append(item)
 
     if pipeline.cfg.log_mode & 2:
-        log.info("Retrieval time: %.2fs", retrieve_s, extra={"log_type": "INFO"})
+        log.info("Query enhancement time: %.2fs", total_enhance_s, extra={"log_type": "INFO"})
+        log.info("Retrieval time: %.2fs", total_retrieve_s, extra={"log_type": "INFO"})
+        log.info("Rerank time: %.2fs", total_rerank_s, extra={"log_type": "INFO"})
+        log.info("Compression time: %.2fs", total_compress_s, extra={"log_type": "INFO"})
 
-    if not results:
+    if not final_context_for_llm:
         log.warning("No documents found by retriever.", extra={"log_type": "WARNING"})
         answer_result = AnswerResult(answer=pipeline.cfg.no_data_response)
         if return_debug:
             return answer_result, QueryDebug(initial_contexts={})
         return answer_result
-
-    rerank_start = time.perf_counter()
-    reranked_results = pipeline.reranker.rerank(query, results, top_k=2)
-    rerank_s = time.perf_counter() - rerank_start
-
-    if pipeline.cfg.log_mode & 2:
-        log.info("Rerank time: %.2fs", rerank_s, extra={"log_type": "INFO"})
-    reranked_results = pipeline.acl_filter.filter(reranked_results, user_role=user_role)
-    if not reranked_results:
-        log.warning(
-            "All data was not found or was filtered out, with the role=%s",
-            user_role,
-            extra={"log_type": "WARNING"},
-        )
-        answer_result = AnswerResult(answer=pipeline.cfg.no_data_response)
-        if return_debug:
-            return answer_result, QueryDebug(initial_contexts={})
-        return answer_result
-
-    final_context_for_llm = []
-    initial_contexts_for_logging = {}
-
-    compress_start = time.perf_counter()
-    for r in reranked_results:
-        neighbors_forward = max(0, int(pipeline.cfg.neighbors_forward))
-        neighbors_backward = max(0, int(pipeline.cfg.neighbors_backward))
-        context_chunks = pipeline.retriever._dense._store.get_neighbors_window(
-            r["main_chunk"],
-            neighbors_backward=neighbors_backward,
-            neighbors_forward=neighbors_forward,
-        )
-
-        if pipeline.cfg.log_mode & 4:
-            context_text = " ".join([c.text for c in context_chunks])
-            initial_contexts_for_logging[r["main_chunk"].id] = context_text
-            log.info(
-                "Context for compression (%s): %s",
-                r["main_chunk"].doc_name,
-                context_text,
-                extra={"log_type": "CONTEXT_AFTER_RERANK"},
-            )
-
-        compressed_context = pipeline.compressor.compress(question=query, chunks=context_chunks)
-        final_context_for_llm.append({**r, "compressed_context": compressed_context})
-    compress_s = time.perf_counter() - compress_start
-
-    if pipeline.cfg.log_mode & 2:
-        log.info("Compression time: %.2fs", compress_s, extra={"log_type": "INFO"})
 
     if not answer_mode:
         context_text = _build_context_text(final_context_for_llm)

@@ -28,7 +28,7 @@ def build_hybrid_retriever(
     cfg = cfg or RAGConfig()
 
     dense = DenseRetriever(cfg=cfg)
-    lexical = ElasticsearchLexicalRetriever(index_name="hd_chunks")
+    lexical = ElasticsearchLexicalRetriever(index_name="hd_chunks", cfg=cfg)
 
     if reindex:
         log.info("Reindex enabled: rebuilding indexes...", extra={'log_type': 'INFO'})

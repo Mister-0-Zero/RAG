@@ -29,7 +29,7 @@ class ContextCompressor:
     def compress(self, question: str, chunks: List[Chunk]) -> str:
         prompt = self._build_prompt(question, chunks)
 
-        log.debug(
+        log.info(
             "Context before compression:\n%s",
             prompt,
             extra={"log_type": "CONTEXT_BEFORE"},
@@ -57,12 +57,6 @@ class ContextCompressor:
         if not text:
             log.warning("Compressor returned empty response; falling back to full context.")
             text = "\n\n".join([c.text for c in chunks]).strip()
-
-        log.debug(
-            "Context after compression:\n%s",
-            text,
-            extra={"log_type": "CONTEXT_AFTER"},
-        )
 
         return text
 

@@ -23,6 +23,7 @@ class Chunk(BaseModel):
     start_char: int
     end_char: int
     doc_name: str
+    section_title: str | None = None
     language: str | None = None
     category: str | None = None
     allowed_roles: str | None = None
@@ -255,6 +256,7 @@ def _make_chunk(
     end: int,
 ) -> Chunk:
     language = detect_language(chunk_text)
+    section_title = _extract_section_title(chunk_text)
     return Chunk(
         id=f"{doc.id}::chunk_{order}",
         doc_id=doc.id,
@@ -266,4 +268,26 @@ def _make_chunk(
         language=language,
         category=doc.category,
         allowed_roles=doc.allowed_roles,
+        section_title=section_title,
     )
+
+
+def _extract_section_title(text: str) -> str | None:
+    if not text:
+        return None
+    first_line = text.strip().splitlines()[0].strip()
+    if not first_line:
+        return None
+
+    quoted = re.search(r'"([^"]+)"', first_line)
+    if quoted:
+        return quoted.group(1).strip()
+
+    if first_line.lower().startswith("section:"):
+        title = first_line.split(":", 1)[1].strip()
+        return title.strip('"').strip() or None
+
+    if len(first_line) <= 120:
+        return first_line
+
+    return None

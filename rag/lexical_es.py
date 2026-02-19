@@ -10,14 +10,16 @@ from elasticsearch.helpers import bulk
 
 from search.es_client import get_es
 from rag.chunking import Chunk
+from rag.config import RAGConfig
 
 log = logging.getLogger(__name__)
 
 
 class ElasticsearchLexicalRetriever:
     """Manages indexing and searching text chunks in Elasticsearch."""
-    def __init__(self, index_name: str = "hd_chunks") -> None:
+    def __init__(self, index_name: str = "hd_chunks", cfg: RAGConfig | None = None) -> None:
         """Initializes the Elasticsearch client and ensures the index exists."""
+        self._cfg = cfg or RAGConfig()
         self._es = get_es()
         self._index_name = index_name
         self._ensure_index()
@@ -33,6 +35,7 @@ class ElasticsearchLexicalRetriever:
                         "doc_id":    {"type": "keyword"},
                         "doc_name":  {"type": "keyword"},
                         "text":      {"type": "text"},
+                        "section_title": {"type": "text"},
                         "order":     {"type": "integer"},
                         "language":  {"type": "keyword"},
                         "category":  {"type": "keyword"},
@@ -59,6 +62,7 @@ class ElasticsearchLexicalRetriever:
                     "doc_id": c.doc_id,
                     "doc_name": c.doc_name,
                     "text": c.text,
+                    "section_title": c.section_title,
                     "order": c.order,
                     "language": c.language or "mixed",
                     "category": c.category or "general",
@@ -91,13 +95,17 @@ class ElasticsearchLexicalRetriever:
         
         log.info(f"Performing lexical search for query: '{query}' with filters: {filters}", extra={'log_type': 'INFO'})
 
+        fields = ["text"]
+        if self._cfg.section_title_boost and self._cfg.section_title_boost > 0:
+            fields.append(f"section_title^{self._cfg.section_title_boost}")
+
         body = {
             "query": {
                 "bool": {
                     "must": {
                         "multi_match": {
                             "query": query,
-                            "fields": ["text"],
+                            "fields": fields,
                         }
                     },
                     "filter": filters or [],
@@ -121,6 +129,7 @@ class ElasticsearchLexicalRetriever:
                 doc_name=src["doc_name"],
                 text=src["text"],
                 order=src["order"],
+                section_title=src.get("section_title"),
                 start_char=src.get("start_char", 0),
                 end_char=src.get("end_char", 0),
                 language=src.get("language"),
